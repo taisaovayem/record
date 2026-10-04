@@ -8,12 +8,13 @@ Build a self-hosted web application for recording and managing one-time videos o
 
 - Monorepo in this repository: NestJS API, React web client, PostgreSQL database.
 - Docker Compose starts the complete application. PostgreSQL data and video files persist in project directories mounted into containers.
+- PostgreSQL database is `record`, user is `postgres`, and local host development connects to `localhost`; Compose also starts its own PostgreSQL container and the API connects to it through the Compose service hostname. Credentials are configurable through environment variables, with the user-supplied password as the local default.
 - No external object storage, authentication, sessions, video thumbnails, or archived-video preview player.
 - Each record stores an order code, recording timestamp, and video file reference. Duplicate order codes are allowed; add a non-unique index for search.
 - The list shows order code and recording time, supports order-code search, and is paginated with newest records first. There is no sort control.
 - The user can select multiple old records and delete them in one action. Ask for confirmation before deletion; deleting a record also removes its associated video file.
 - The new-record flow has an editable order-code input, QR scanning that fills the input with the scanned text, and start/stop recording actions.
-- Provide keyboard shortcuts to start a new recording from the list, open QR scanning, start recording, and stop recording. Show shortcut hints in the UI and do not trigger action shortcuts while the user is typing in an input or textarea.
+- Provide keyboard shortcuts `Alt+N` to start a new recording from the list, `Alt+Q` to open QR scanning, `Alt+R` to start recording, and `Alt+S` to stop recording. Show shortcut hints in the UI and do not trigger action shortcuts while the user is typing in an input or textarea.
 - After stop, save the recording automatically. On successful save, return to the list and refresh it for the next recording session.
 - Preserve the captured browser blob until the server confirms save; offer retry of that same blob after an upload failure, so a one-time packing event does not need to be repeated.
 - Prefer MP4 when supported by the browser. Otherwise use a recording MIME type supported by that browser and retain its correct file extension and content type.
@@ -37,7 +38,7 @@ The React app contains a paginated record list with search, selection and bulk-d
 
 ## Persistence and local operation
 
-Compose mounts PostgreSQL's data directory and the application's video directory from the project into their respective containers. The repository includes environment examples and instructions for starting and stopping the stack. The API and web app are exposed on documented local ports.
+Compose mounts PostgreSQL's data directory and the application's video directory from the project into their respective containers. The Compose PostgreSQL service uses the `record` database and `postgres` user; its password is configurable through an environment variable. The API also supports a host-run configuration using `localhost` for the user's existing local database. The repository includes environment examples and instructions for starting and stopping the stack. The API and web app are exposed on documented local ports.
 
 ## Failure handling
 
