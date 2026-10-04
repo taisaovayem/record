@@ -24,11 +24,13 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
   const chunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerRef = useRef<BrowserQRCodeReader | null>(null);
-  const scannerControlsRef = useRef<{ stop: () => void } | null>(null);
+  const scannerAttemptRef = useRef<{ cancelled: boolean; decoded: boolean } | null>(null);
+  const scannerControlsRef = useRef<{ attempt: { cancelled: boolean; decoded: boolean }; controls: { stop: () => void } } | null>(null);
 
   useEffect(() => {
     return () => {
-      scannerControlsRef.current?.stop();
+      if (scannerAttemptRef.current) scannerAttemptRef.current.cancelled = true;
+      scannerControlsRef.current?.controls.stop();
       recorderRef.current?.state !== 'inactive' && recorderRef.current?.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
@@ -44,22 +46,53 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
 
   useEffect(() => { if (autoScan) void scan(); }, [autoScan]);
 
-  const closeScanner = () => { scannerControlsRef.current?.stop(); scannerControlsRef.current = null; setScanning(false); };
+  const releaseQrCamera = async () => {
+    const { BrowserCodeReader } = await import('@zxing/browser');
+    BrowserCodeReader.releaseAllStreams();
+  };
+
+  const closeScanner = () => {
+    const attempt = scannerAttemptRef.current;
+    if (attempt) attempt.cancelled = true;
+    const current = scannerControlsRef.current;
+    if (attempt && current?.attempt === attempt) { current.controls.stop(); scannerControlsRef.current = null; scannerAttemptRef.current = null; }
+    scannerRef.current = null;
+    setScanning(false);
+  };
   const scan = async () => {
     if (scanning) { closeScanner(); return; }
     setError(''); setCameraError(''); setScanning(true);
+    const attempt = { cancelled: false, decoded: false };
+    scannerAttemptRef.current = attempt;
+    let reader: BrowserQRCodeReader | null = null;
     try {
       if (!scannerRef.current) { const { BrowserQRCodeReader: Reader } = await import('@zxing/browser'); scannerRef.current = new Reader(); }
-      const controls = await scannerRef.current.decodeFromVideoDevice(undefined, 'qr-video', (result) => {
-        if (!result) return;
+      if (attempt.cancelled) { if (scannerAttemptRef.current === attempt) scannerAttemptRef.current = null; return; }
+      reader = scannerRef.current;
+      const controls = await reader.decodeFromVideoDevice(undefined, 'qr-video', (result) => {
+        if (!result || attempt.cancelled || attempt.decoded) return;
+        attempt.decoded = true;
         setOrderCode(result.getText());
         closeScanner();
         document.getElementById('order-code')?.focus();
       });
-      scannerControlsRef.current = controls;
+      if (attempt.cancelled || attempt.decoded) {
+        controls.stop();
+        if (scannerControlsRef.current?.attempt === attempt) scannerControlsRef.current = null;
+        if (scannerRef.current === reader) scannerRef.current = null;
+        if (scannerAttemptRef.current === attempt) scannerAttemptRef.current = null;
+        return;
+      }
+      scannerControlsRef.current = { attempt, controls };
     } catch (reason) {
-      setScanning(false);
-      setCameraError(reason instanceof Error ? reason.message : 'Không mở được camera quét QR.');
+      if (scannerControlsRef.current?.attempt === attempt) { scannerControlsRef.current.controls.stop(); scannerControlsRef.current = null; }
+      if (!attempt.cancelled) {
+        try { await releaseQrCamera(); } catch { /* preserve the original scanner error */ }
+        if (scannerRef.current === reader) scannerRef.current = null;
+        if (scannerAttemptRef.current === attempt) scannerAttemptRef.current = null;
+        setScanning(false);
+        setCameraError(reason instanceof Error ? reason.message : 'Không mở được camera quét QR.');
+      }
     }
   };
 
