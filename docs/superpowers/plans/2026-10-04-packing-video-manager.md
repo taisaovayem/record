@@ -44,7 +44,7 @@ API contract shared by frontend and backend:
 
 - `GET /api/records?page=1&limit=20&search=<text>` returns `{ items: RecordSummary[], total: number, page: number, limit: number, totalPages: number }`.
 - `RecordSummary` is `{ id: string, orderCode: string, recordedAt: string, mimeType: string, originalName: string }`.
-- `POST /api/records` accepts multipart fields `orderCode` and `video`; response is a `RecordSummary`.
+- `POST /api/records` accepts browser multipart fields `orderCode`, `captureId`, `recordedAt`, and `video`; legacy callers may omit both `captureId` and `recordedAt` and use the compatibility server timestamp fallback.
 - `GET /api/records/:id/download` streams the saved original file as an attachment.
 - `DELETE /api/records/bulk` accepts `{ ids: string[] }` and returns `{ deletedIds: string[], failures: { id: string, reason: string }[] }`.
 - API origin is `/api`; web container proxies `/api` to the NestJS service.

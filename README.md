@@ -11,7 +11,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open <http://localhost:8080>. Compose starts the web app, NestJS API, and its own PostgreSQL container. The default published ports are web `8080`, API `3000`, and PostgreSQL `5432`; change `WEB_PORT`, `API_PORT`, or `POSTGRES_PORT` in `.env` if needed.
+Open <http://localhost:8080>. Compose starts the web app, NestJS API, and its own PostgreSQL container. The default published ports are web `8080`, API `3000`, and PostgreSQL `5433` (mapped to PostgreSQL port `5432` inside Compose); change `WEB_PORT`, `API_PORT`, or `POSTGRES_PORT` in `.env` if needed.
 
 The Compose database is named `record` and uses user `postgres`. Set `POSTGRES_PASSWORD` in `.env` to change its password. The API connects to PostgreSQL using the Compose service hostname `db` (container `localhost` would refer to the API container itself). The web server proxies `/api` requests to `api:3000` on the Compose network.
 
@@ -52,4 +52,4 @@ Persistent data lives here:
 - `./data/videos` — uploaded video files.
 - `.env` — local configuration (ignored by Git; create it from `.env.example`).
 
-Back up both data directories to preserve the records and videos. Stop the stack before copying them so PostgreSQL files and database metadata are consistent. Do not delete these directories when bringing containers down. Compose provisions its own PostgreSQL database even if a host PostgreSQL server is already installed; use `localhost` for the host-run API and `db` only for the API running inside Compose.
+Back up both data directories to preserve the records and videos. Stop the stack before copying them so PostgreSQL files and database metadata are consistent. Do not delete these directories when bringing containers down. Compose publishes its PostgreSQL container on host port `5433` by default so it can run alongside a host PostgreSQL server on `5432`; use `localhost` for the host-run API and `db` only for the API running inside Compose.

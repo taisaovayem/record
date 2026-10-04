@@ -35,7 +35,7 @@ export async function listRecords(page: number, limit: number, search: string): 
   return checked(await fetch(`${apiBase}/records?${query}`));
 }
 
-export function uploadRecord(orderCode: string, blob: Blob, filename: string, onProgress: (percent: number) => void): Promise<PackingRecord> {
+export function uploadRecord(orderCode: string, blob: Blob, filename: string, captureId: string, recordedAt: string, onProgress: (percent: number) => void): Promise<PackingRecord> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open('POST', `${apiBase}/records`);
@@ -54,6 +54,8 @@ export function uploadRecord(orderCode: string, blob: Blob, filename: string, on
     };
     const form = new FormData();
     form.append('orderCode', orderCode);
+    form.append('captureId', captureId);
+    form.append('recordedAt', recordedAt);
     form.append('video', blob, filename);
     request.send(form);
   });

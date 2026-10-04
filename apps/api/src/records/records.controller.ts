@@ -7,6 +7,7 @@ import { diskStorage } from 'multer';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { isISO8601, isUUID } from 'class-validator';
 import type { Express, Response } from 'express';
 import { BulkDeleteDto } from './dto/bulk-delete.dto.js';
 import { ListRecordsDto } from './dto/list-records.dto.js';
@@ -39,13 +40,32 @@ export class RecordsController {
     }),
     // Intentionally no small fileSize limit: use disk-backed staging for long recordings.
   }))
-  async upload(@Body('orderCode') orderCode: unknown, @UploadedFile() video: Express.Multer.File | undefined) {
+  async upload(
+    @Body('orderCode') orderCode: unknown,
+    @Body('captureId') captureId: unknown,
+    @Body('recordedAt') recordedAt: unknown,
+    @UploadedFile() video: Express.Multer.File | undefined,
+  ) {
     if (typeof orderCode !== 'string' || !orderCode.trim() || orderCode.length > 255) {
       await this.records.removeTemporaryUpload(video?.path);
       throw new BadRequestException('orderCode must be a non-empty string of at most 255 characters');
     }
     if (!video) throw new BadRequestException('video file is required');
-    return this.records.create(orderCode, video);
+    // Browser uploads always send both fields. The absence of both preserves compatibility
+    // for older clients, which then use the server timestamp without retry idempotency.
+    if ((captureId === undefined) !== (recordedAt === undefined)) {
+      await this.records.removeTemporaryUpload(video.path);
+      throw new BadRequestException('captureId and recordedAt must be supplied together');
+    }
+    if (captureId !== undefined && (typeof captureId !== 'string' || !isUUID(captureId, '4'))) {
+      await this.records.removeTemporaryUpload(video.path);
+      throw new BadRequestException('captureId must be a UUID v4 when supplied');
+    }
+    if (recordedAt !== undefined && (typeof recordedAt !== 'string' || !isISO8601(recordedAt, { strict: true }) || Number.isNaN(new Date(recordedAt).getTime()))) {
+      await this.records.removeTemporaryUpload(video.path);
+      throw new BadRequestException('recordedAt must be a valid ISO-8601 timestamp when supplied');
+    }
+    return this.records.create(orderCode, video, captureId, recordedAt === undefined ? new Date() : new Date(recordedAt));
   }
 
   @Get(':id/download')

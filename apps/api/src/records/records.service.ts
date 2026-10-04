@@ -1,9 +1,8 @@
-import { Injectable, InternalServerErrorException, NotFoundException, UnsupportedMediaTypeException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, Logger, NotFoundException, OnModuleInit, UnsupportedMediaTypeException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
-import { createReadStream } from 'node:fs';
-import { mkdir, open, rename, rm, stat, unlink } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { constants, createReadStream } from 'node:fs';
+import { mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { Repository } from 'typeorm';
 import type { Express } from 'express';
@@ -11,13 +10,23 @@ import { ListRecordsDto } from './dto/list-records.dto.js';
 import { RecordEntity } from './record.entity.js';
 
 const videoDirectory = () => process.env.VIDEO_STORAGE_DIR ?? join(process.cwd(), 'data', 'videos');
+const tombstoneSuffix = '.deleting';
 const mimeExtensions: Record<string, string> = {
   'video/mp4': '.mp4', 'video/webm': '.webm', 'video/ogg': '.ogv', 'video/quicktime': '.mov',
 };
+const allowedVideoExtensions = new Set([...Object.values(mimeExtensions), '.m4v', '.mkv', '.avi']);
+
+type DeleteOutcome = 'deleted' | 'exists' | 'unknown';
 
 @Injectable()
-export class RecordsService {
+export class RecordsService implements OnModuleInit {
+  private readonly logger = new Logger(RecordsService.name);
+
   constructor(@InjectRepository(RecordEntity) private readonly repository: Repository<RecordEntity>) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.reconcileTombstones();
+  }
 
   async list(query: ListRecordsDto) {
     const page = query.page ?? 1;
@@ -41,20 +50,35 @@ export class RecordsService {
     };
   }
 
-  async create(orderCode: string, upload: Express.Multer.File) {
+  async create(orderCode: string, upload: Express.Multer.File, captureId?: string, recordedAt = new Date()) {
     await mkdir(videoDirectory(), { recursive: true });
     const candidateMimeType = (upload.mimetype || '').split(';', 1)[0].trim().toLowerCase();
     if (!/^video\/[a-z0-9.+-]+$/.test(candidateMimeType)) {
       await this.removeFileBestEffort(upload.path);
       throw new UnsupportedMediaTypeException('Uploaded file must have a video MIME type');
     }
+
+    if (captureId) {
+      try {
+        const existing = await this.repository.findOneBy({ captureId });
+        if (existing) {
+          await this.removeFileBestEffort(upload.path);
+          return this.toSummary(existing);
+        }
+      } catch (error) {
+        await this.removeFileBestEffort(upload.path);
+        throw new InternalServerErrorException('Could not check the recording identity', { cause: error });
+      }
+    }
+
     const mimeType = candidateMimeType;
     const extension = mimeExtensions[mimeType] ?? this.extensionFor(upload.originalname);
-    const filename = `${randomUUID()}${extension}`;
+    const filename = `${captureId ? createHash('sha256').update(captureId).digest('hex') : randomUUID()}${extension}`;
     const finalPath = join(videoDirectory(), filename);
+    let published = false;
 
     try {
-      // Flush staged file contents, atomically publish the final name, then flush the directory entry.
+      // Flush staged data before publishing the final name, then flush its directory entry.
       const staged = await open(upload.path, 'r+');
       try {
         await staged.sync();
@@ -62,21 +86,45 @@ export class RecordsService {
         await staged.close();
       }
       await rename(upload.path, finalPath);
+      published = true;
       const directoryHandle = await open(videoDirectory(), constants.O_RDONLY);
       try {
         await directoryHandle.sync();
       } finally {
         await directoryHandle.close();
       }
-
-      const record = this.repository.create({ orderCode: orderCode.trim(), filename, mimeType });
-      return this.toSummary(await this.repository.save(record));
     } catch (error) {
       await this.removeFileBestEffort(upload.path);
-      // After rename, the staged path no longer exists. Remove the published path too
-      // if directory syncing or metadata persistence fails, so no unindexed video is orphaned.
-      await this.removeFileBestEffort(finalPath);
-      throw new InternalServerErrorException('Could not safely save the video', { cause: error });
+      if (published) await this.removeFileBestEffort(finalPath);
+      throw new InternalServerErrorException('Could not safely write the video', { cause: error });
+    }
+
+    const record = this.repository.create({
+      orderCode: orderCode.trim(),
+      captureId: captureId ?? null,
+      recordedAt,
+      filename,
+      mimeType,
+    });
+    try {
+      return this.toSummary(await this.repository.save(record));
+    } catch (error) {
+      // A connection can fail after PostgreSQL committed. A capture ID lets us resolve that
+      // outcome without deleting the only published video file.
+      if (captureId) {
+        try {
+          const existing = await this.repository.findOneBy({ captureId });
+          if (existing) {
+            if (existing.filename !== filename) await this.removeFileBestEffort(finalPath);
+            return this.toSummary(existing);
+          }
+        } catch (lookupError) {
+          throw new InternalServerErrorException('Could not resolve video save outcome; the video was preserved for recovery', { cause: lookupError });
+        }
+      }
+      // Without an idempotency key, preserve the published file instead of risking deleting
+      // a file whose metadata commit cannot be observed after a database error.
+      throw new InternalServerErrorException('Could not resolve video save outcome; the video was preserved for recovery', { cause: error });
     }
   }
 
@@ -96,30 +144,65 @@ export class RecordsService {
     const deletedIds: string[] = [];
     const failures: { id: string; reason: string }[] = [];
     for (const id of [...new Set(ids)]) {
+      let record: RecordEntity | null;
       try {
-        const record = await this.repository.findOneBy({ id });
-        if (!record) {
-          failures.push({ id, reason: 'not_found' });
-          continue;
-        }
-        try {
-          await unlink(join(videoDirectory(), record.filename));
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-            failures.push({ id, reason: 'video_file_delete_failed' });
-            continue;
-          }
-          // A missing file should not prevent cleanup of the metadata row.
-        }
-        try {
-          await this.repository.delete({ id });
-          deletedIds.push(id);
-        } catch {
-          // Leave the row so this item can be retried; its already-removed file is treated as missing next time.
-          failures.push({ id, reason: 'database_delete_failed' });
-        }
+        record = await this.repository.findOneBy({ id });
       } catch {
         failures.push({ id, reason: 'database_read_failed' });
+        continue;
+      }
+      if (!record) {
+        failures.push({ id, reason: 'not_found' });
+        continue;
+      }
+
+      const sourcePath = join(videoDirectory(), record.filename);
+      const tombstonePath = `${sourcePath}${tombstoneSuffix}`;
+      let hasTombstone = false;
+      try {
+        await rename(sourcePath, tombstonePath);
+        hasTombstone = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+          try {
+            await stat(tombstonePath);
+            hasTombstone = true;
+          } catch (tombstoneError) {
+            if ((tombstoneError as NodeJS.ErrnoException).code !== 'ENOENT') {
+              failures.push({ id, reason: 'video_file_delete_failed' });
+              continue;
+            }
+            // Missing source is allowed: clean up its metadata record below.
+          }
+        } else {
+          failures.push({ id, reason: 'video_file_delete_failed' });
+          continue;
+        }
+      }
+
+      let outcome: DeleteOutcome;
+      try {
+        const result = await this.repository.delete({ id });
+        outcome = result.affected === 1 ? 'deleted' : await this.deleteOutcome(id);
+      } catch {
+        outcome = await this.deleteOutcome(id);
+      }
+
+      if (outcome === 'deleted') {
+        if (hasTombstone) await this.removeFileBestEffort(tombstonePath);
+        deletedIds.push(id);
+        continue;
+      }
+      if (outcome === 'unknown') {
+        // Preserve the tombstone: it may be the only copy until a later reconciliation can
+        // prove whether metadata was committed.
+        failures.push({ id, reason: 'database_delete_outcome_unknown' });
+        continue;
+      }
+      if (hasTombstone && !await this.restoreTombstone(tombstonePath, sourcePath)) {
+        failures.push({ id, reason: 'video_file_restore_failed' });
+      } else {
+        failures.push({ id, reason: 'database_delete_failed' });
       }
     }
     return { deletedIds, failures };
@@ -129,9 +212,68 @@ export class RecordsService {
     if (path) await this.removeFileBestEffort(path);
   }
 
+  private async deleteOutcome(id: string): Promise<DeleteOutcome> {
+    try {
+      return await this.repository.findOneBy({ id }) ? 'exists' : 'deleted';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  private async restoreTombstone(tombstonePath: string, sourcePath: string): Promise<boolean> {
+    try {
+      await rename(tombstonePath, sourcePath);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return false;
+      try {
+        await stat(sourcePath);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  private async reconcileTombstones(): Promise<void> {
+    await mkdir(videoDirectory(), { recursive: true });
+    let entries;
+    try {
+      entries = await readdir(videoDirectory(), { withFileTypes: true });
+    } catch (error) {
+      this.logger.error('Could not inspect pending video deletions', error instanceof Error ? error.stack : undefined);
+      return;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(tombstoneSuffix)) continue;
+      const filename = entry.name.slice(0, -tombstoneSuffix.length);
+      const tombstonePath = join(videoDirectory(), entry.name);
+      const sourcePath = join(videoDirectory(), filename);
+      try {
+        const record = await this.repository.findOneBy({ filename });
+        if (!record) {
+          await this.removeFileBestEffort(tombstonePath);
+          continue;
+        }
+        try {
+          await stat(sourcePath);
+          // The active file is already present; discard the stale pending-delete copy.
+          await this.removeFileBestEffort(tombstonePath);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          await rename(tombstonePath, sourcePath);
+        }
+      } catch (error) {
+        // Leave the tombstone untouched when its database outcome cannot be checked.
+        this.logger.error(`Could not reconcile pending deletion ${entry.name}`, error instanceof Error ? error.stack : undefined);
+      }
+    }
+  }
+
   private extensionFor(originalName: string): string {
     const extension = extname(originalName).toLowerCase();
-    return /^\.[a-z0-9]{1,8}$/.test(extension) ? extension : '.bin';
+    return allowedVideoExtensions.has(extension) ? extension : '.webm';
   }
 
   private toSummary(record: RecordEntity) {
@@ -148,7 +290,7 @@ export class RecordsService {
     try {
       await rm(path, { force: true });
     } catch {
-      // Keep the primary error; stale staging files do not become visible records.
+      // Pending files are reconciled on a later startup when applicable.
     }
   }
 }
