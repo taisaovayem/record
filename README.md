@@ -1,8 +1,8 @@
 # Packing Video Manager
 
-A local web app for recording and managing packing videos. The browser records with its camera and uploads each completed video to the local API. PostgreSQL stores record information; video files and database data are persisted under this project directory.
+A local web app for recording and managing packing videos. The browser captures video with its camera, then uploads the completed recording to the local API. PostgreSQL stores record information; the database and video files persist under this project directory.
 
-## Run with Docker Compose
+## Start the complete app with Docker Compose
 
 Requirements: Docker Engine with the Docker Compose plugin.
 
@@ -11,38 +11,45 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open <http://localhost:8080>. The web app is served on port `8080`, the API on `3000`, and PostgreSQL on `5432` by default. Change `WEB_PORT`, `API_PORT`, or `POSTGRES_PORT` in `.env` if those ports are already in use.
+Open <http://localhost:8080>. Compose starts the web app, NestJS API, and its own PostgreSQL container. The default published ports are web `8080`, API `3000`, and PostgreSQL `5432`; change `WEB_PORT`, `API_PORT`, or `POSTGRES_PORT` in `.env` if needed.
 
-Compose starts its own PostgreSQL container with database `record` and user `postgres`. Set `POSTGRES_PASSWORD` in `.env` to configure its password; Compose passes that value to the API container as `DATABASE_PASSWORD`. Inside Compose, the API connects to the database hostname `db`; `localhost` inside a container refers to that container itself.
-
-The database files are stored in `./data/postgres`, and uploaded videos are stored in `./data/videos`. Keep or back up these directories to preserve records and videos. Do not remove them when taking the containers down.
+The Compose database is named `record` and uses user `postgres`. Set `POSTGRES_PASSWORD` in `.env` to change its password. The API connects to PostgreSQL using the Compose service hostname `db` (container `localhost` would refer to the API container itself). The web server proxies `/api` requests to `api:3000` on the Compose network.
 
 ## Run services from the host
 
-Install Node.js 22 or newer and pnpm 10, then install workspace dependencies:
+For development outside Docker, install Node.js 22 or newer and pnpm 10, then install dependencies:
 
 ```sh
 pnpm install
 ```
 
-For host-run development, the API must connect to PostgreSQL at `localhost` using database `record`, user `postgres`, and `DATABASE_PASSWORD` set to that database password. The provided `.env.example` documents these values for the supplied local credentials. If you change the Compose database password, set `POSTGRES_PASSWORD` for Compose; set `DATABASE_PASSWORD` to the host PostgreSQL password when running the API from the host. Compose overrides the host connection settings with its own values, including database hostname `db`.
-
-Start the API and web development servers from the repository root:
+Host-run API defaults connect to PostgreSQL at `localhost:5432`, with database `record` and user `postgres`. Set `DATABASE_PASSWORD` to the password for your host PostgreSQL instance. The application does not automatically load `.env` when run with `pnpm dev`; in a Bash-compatible shell, load it first:
 
 ```sh
+set -a
+. ./.env
+set +a
 pnpm dev
 ```
 
-The API uses port `3000`; the web development server uses its configured Vite port. The web app proxies `/api` requests to the API during development.
+The included `.env.example` has the supplied local values. Copy it to `.env` before using the command above, and edit the values if your host database differs. For host development, the API listens on port `3000` and Vite serves the web app on port `5173`, proxying `/api` to `http://localhost:3000`. Compose overrides the API database host to `db` and uses `POSTGRES_PASSWORD` for its own database container.
 
-## Camera access
+## Record and manage videos
 
-Allow camera access when prompted by the browser. Camera capture is available on `localhost` and on secure HTTPS origins; browsers generally block camera access from an insecure remote HTTP origin.
+From the list, choose **Tạo bản quay** or press **Alt+N**. Enter an order code, or choose **Quét QR** / press **Alt+Q** and point the camera at a QR code. The scanned text is inserted into the editable order-code field, where it can be corrected before recording. Duplicate order codes are allowed.
 
-## Data and configuration
+Press **Alt+R** to start recording and **Alt+S** to stop. Stopping uploads and saves that recording automatically. The browser uses MP4 when supported; otherwise it records in a supported browser format. After the server confirms the save, the app returns to the list and refreshes it for the next packing session. If upload fails, keep the page open and choose **Thử tải lại** to upload the same captured video; it remains in browser memory until a successful save. Action shortcuts are ignored while typing in text fields.
 
-- `./data/postgres`: persistent PostgreSQL database files.
-- `./data/videos`: uploaded packing videos.
-- `.env`: local Compose overrides (copy from `.env.example`; this file is ignored by Git).
+The list is always newest-first and paginated (20 records per page). Search by order code, download a saved video, or select multiple records on the current page and choose delete. Deletion asks for confirmation and removes the associated video files as well as their database records. There is no sort control or archived-video preview.
 
-The Compose stack uses a separate PostgreSQL container even if a PostgreSQL server is already installed on the host. To run only the API on the host, configure it to use the host database address `localhost`; do not use the Compose-only hostname `db` from a host process.
+## Camera access and data backup
+
+Allow camera access when prompted. Browsers permit camera capture on `localhost` and secure HTTPS origins; they generally block it on insecure remote HTTP origins. QR scanning also needs camera permission.
+
+Persistent data lives here:
+
+- `./data/postgres` — PostgreSQL database files.
+- `./data/videos` — uploaded video files.
+- `.env` — local configuration (ignored by Git; create it from `.env.example`).
+
+Back up both data directories to preserve the records and videos. Stop the stack before copying them so PostgreSQL files and database metadata are consistent. Do not delete these directories when bringing containers down. Compose provisions its own PostgreSQL database even if a host PostgreSQL server is already installed; use `localhost` for the host-run API and `db` only for the API running inside Compose.
