@@ -23,12 +23,15 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const mountedRef = useRef(true);
   const scannerRef = useRef<BrowserQRCodeReader | null>(null);
   const scannerAttemptRef = useRef<{ cancelled: boolean; decoded: boolean } | null>(null);
   const scannerControlsRef = useRef<{ attempt: { cancelled: boolean; decoded: boolean }; controls: { stop: () => void } } | null>(null);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (scannerAttemptRef.current) scannerAttemptRef.current.cancelled = true;
       scannerControlsRef.current?.controls.stop();
       recorderRef.current?.state !== 'inactive' && recorderRef.current?.stop();
@@ -55,22 +58,29 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
     const attempt = scannerAttemptRef.current;
     if (attempt) attempt.cancelled = true;
     const current = scannerControlsRef.current;
-    if (attempt && current?.attempt === attempt) { current.controls.stop(); scannerControlsRef.current = null; scannerAttemptRef.current = null; }
-    scannerRef.current = null;
-    setScanning(false);
+    if (attempt && current?.attempt === attempt) { current.controls.stop(); scannerControlsRef.current = null; scannerAttemptRef.current = null; scannerRef.current = null; }
+    if (mountedRef.current) setScanning(false);
   };
   const scan = async () => {
-    if (scanning) { closeScanner(); return; }
+    const pending = scannerAttemptRef.current;
+    if (pending) {
+      if (pending.cancelled) return;
+      closeScanner();
+      return;
+    }
     setError(''); setCameraError(''); setScanning(true);
     const attempt = { cancelled: false, decoded: false };
     scannerAttemptRef.current = attempt;
     let reader: BrowserQRCodeReader | null = null;
     try {
       if (!scannerRef.current) { const { BrowserQRCodeReader: Reader } = await import('@zxing/browser'); scannerRef.current = new Reader(); }
-      if (attempt.cancelled) { if (scannerAttemptRef.current === attempt) scannerAttemptRef.current = null; return; }
+      if (attempt.cancelled) {
+        if (scannerAttemptRef.current === attempt) scannerAttemptRef.current = null;
+        return;
+      }
       reader = scannerRef.current;
       const controls = await reader.decodeFromVideoDevice(undefined, 'qr-video', (result) => {
-        if (!result || attempt.cancelled || attempt.decoded) return;
+        if (!result || attempt.cancelled || attempt.decoded || !mountedRef.current) return;
         attempt.decoded = true;
         setOrderCode(result.getText());
         closeScanner();
@@ -78,6 +88,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
       });
       if (attempt.cancelled || attempt.decoded) {
         controls.stop();
+        try { await releaseQrCamera(); } catch { /* controls.stop() already releases this scanner's stream */ }
         if (scannerControlsRef.current?.attempt === attempt) scannerControlsRef.current = null;
         if (scannerRef.current === reader) scannerRef.current = null;
         if (scannerAttemptRef.current === attempt) scannerAttemptRef.current = null;
@@ -86,10 +97,10 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
       scannerControlsRef.current = { attempt, controls };
     } catch (reason) {
       if (scannerControlsRef.current?.attempt === attempt) { scannerControlsRef.current.controls.stop(); scannerControlsRef.current = null; }
-      if (!attempt.cancelled) {
-        try { await releaseQrCamera(); } catch { /* preserve the original scanner error */ }
-        if (scannerRef.current === reader) scannerRef.current = null;
-        if (scannerAttemptRef.current === attempt) scannerAttemptRef.current = null;
+      try { await releaseQrCamera(); } catch { /* preserve the original scanner error */ }
+      if (scannerRef.current === reader) scannerRef.current = null;
+      if (scannerAttemptRef.current === attempt) scannerAttemptRef.current = null;
+      if (!attempt.cancelled && mountedRef.current) {
         setScanning(false);
         setCameraError(reason instanceof Error ? reason.message : 'Không mở được camera quét QR.');
       }
@@ -100,6 +111,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
     if (!orderCode.trim()) { setError('Nhập mã đơn trước khi quay.'); document.getElementById('order-code')?.focus(); return; }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { setCameraError('Trình duyệt này chưa hỗ trợ quay video. Hãy mở ứng dụng bằng localhost hoặc HTTPS trên trình duyệt hiện đại.'); return; }
     closeScanner(); setError(''); setCameraError('');
+    if (scannerAttemptRef.current) { setCameraError('Đang đóng máy quét QR. Vui lòng đợi một chút rồi thử quay lại.'); return; }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
       streamRef.current = stream;
