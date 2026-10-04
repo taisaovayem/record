@@ -10,4 +10,3 @@ dist/
 build/
 **/build/
 coverage/
-pnpm-lock.yaml
