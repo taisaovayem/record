@@ -1,3 +1,30 @@
+
+# Hướng dẫn sử dụng
+Cần cài đặt Docker nếu chưa có
+[Windows](https://docs.docker.com/desktop/setup/install/windows-install/) |
+[Macos](https://docs.docker.com/desktop/setup/install/mac-install/) |
+[Linux](https://docs.docker.com/desktop/setup/install/linux/)
+
+Cài đặt xong chạy Docker lên, bật tùy chọn động khi mở máy để khỏi phải chạy lại Docker khi khởi động lại máy.
+Nếu khởi động lại máy mà Docker chư bật, thì chỉ cẩn chạy phần mềm Docker lên và chạy các container có trong đó là được
+
+Đối với Windows, chạy file `start-windows.bat`
+
+Đối với MacOS/Linux, chạy file `start-macos-linux.sh`
+
+Chỉ cần chạy một lần duy nhất, những lần sử dụng sau không cần phải chạy lại nữa
+
+Sử dụng phần mềm, chỉ cần truy cập [http://localhost:8080](http://localhost:8080)
+Truy cập từ máy khác có cùng mạng LAN: `http://<ip máy chủ>:8080`
+
+# Lưu ý: Chỉ chạy trong mạng nội bộ, tuyệt đối không chạy trên máy chủ hòa mạng internet vì sẽ bị hack
+
+## Hướng dẫn dùng phím tắt
+`N` để tạo bản ghi mới
+`Q` để quét QR đơn
+`R` để bắt đầu quay
+`S` để lưu và kêt thúc
+
 # Packing Video Manager
 
 A local web app for recording and managing packing videos. The browser captures video with its camera, then uploads the completed recording to the local API. PostgreSQL stores record information; the database and video files persist under this project directory.
