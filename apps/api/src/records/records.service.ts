@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, NotFoundException, UnsupportedMediaTypeException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -44,7 +44,11 @@ export class RecordsService {
   async create(orderCode: string, upload: Express.Multer.File) {
     await mkdir(videoDirectory(), { recursive: true });
     const candidateMimeType = (upload.mimetype || '').split(';', 1)[0].trim().toLowerCase();
-    const mimeType = /^video\/[a-z0-9.+-]+$/.test(candidateMimeType) ? candidateMimeType : 'application/octet-stream';
+    if (!/^video\/[a-z0-9.+-]+$/.test(candidateMimeType)) {
+      await this.removeFileBestEffort(upload.path);
+      throw new UnsupportedMediaTypeException('Uploaded file must have a video MIME type');
+    }
+    const mimeType = candidateMimeType;
     const extension = mimeExtensions[mimeType] ?? this.extensionFor(upload.originalname);
     const filename = `${randomUUID()}${extension}`;
     const finalPath = join(videoDirectory(), filename);
@@ -65,15 +69,13 @@ export class RecordsService {
         await directoryHandle.close();
       }
 
-      try {
-        const record = this.repository.create({ orderCode: orderCode.trim(), filename, mimeType });
-        return this.toSummary(await this.repository.save(record));
-      } catch (error) {
-        await this.removeFileBestEffort(finalPath);
-        throw error;
-      }
+      const record = this.repository.create({ orderCode: orderCode.trim(), filename, mimeType });
+      return this.toSummary(await this.repository.save(record));
     } catch (error) {
       await this.removeFileBestEffort(upload.path);
+      // After rename, the staged path no longer exists. Remove the published path too
+      // if directory syncing or metadata persistence fails, so no unindexed video is orphaned.
+      await this.removeFileBestEffort(finalPath);
       throw new InternalServerErrorException('Could not safely save the video', { cause: error });
     }
   }
