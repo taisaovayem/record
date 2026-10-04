@@ -63,11 +63,11 @@ export default function RecordList({ onNew, refreshKey, onScan }: Props) {
   return <section className="list-panel">
     <div className="list-heading">
       <div><p className="eyebrow">KHO LƯU TRỮ</p><h2>Các lần đóng gói</h2><p className="muted">{result.total} video · mới nhất trước</p></div>
-      <button className="button button-primary" onClick={onNew}>＋ <span>Tạo bản quay</span> <kbd>Alt N</kbd></button>
+      <button className="button button-primary" onClick={onNew}>＋ <span>Tạo bản quay</span> <kbd>N</kbd></button>
     </div>
     <div className="toolbar">
       <label className="search-box"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Tìm theo mã đơn" aria-label="Tìm theo mã đơn" />{search && <button aria-label="Xóa tìm kiếm" className="icon-button" onClick={() => setSearch('')}>×</button>}</label>
-      <button className="button button-quiet" onClick={onScan}><span aria-hidden="true">▦</span> Quét QR <kbd>Alt Q</kbd></button>
+      <button className="button button-quiet" onClick={onScan}><span aria-hidden="true">▦</span> Quét QR <kbd>Q</kbd></button>
       {selection.size > 0 && <button className="button button-danger" onClick={remove} disabled={deleting}>{deleting ? 'Đang xóa…' : `Xóa ${selection.size} mục`}</button>}
     </div>
     {error && <div className="notice notice-error" role="alert">{error}<button className="icon-button" onClick={() => setError('')}>×</button></div>}

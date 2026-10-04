@@ -100,7 +100,6 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
         attempt.decoded = true;
         setOrderCode(result.getText());
         closeScanner();
-        document.getElementById('order-code')?.focus();
       });
       if (attempt.cancelled || attempt.decoded) {
         controls.stop();
@@ -217,7 +216,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
   return <section className="recorder-panel">
     <div className="recorder-top"><button className="back-button" onClick={cancel} disabled={phase === 'recording' || phase === 'uploading' || Boolean(captured)}>← Danh sách</button><span className="eyebrow">BẢN QUAY MỚI</span></div>
     <div className="recorder-intro"><div><p className="eyebrow">GHI LẠI QUÁ TRÌNH ĐÓNG GÓI</p><h2>Mã đơn hàng</h2><p className="muted">Quét mã hoặc nhập mã đơn cần lưu video.</p></div><span className="recorder-step">01 <i>/</i> 01</span></div>
-    <div className="order-entry"><label htmlFor="order-code">Mã đơn</label><div className="entry-row"><input id="order-code" value={orderCode} onChange={(event) => setOrderCode(event.target.value)} placeholder="Ví dụ: DH-2026-001" maxLength={255} disabled={inputLocked} autoFocus /><button className="button button-quiet" onClick={scan} disabled={inputLocked}>{scanning ? 'Đóng máy quét' : <>▦ Quét QR <kbd>Alt Q</kbd></>}</button></div>
+    <div className="order-entry"><label htmlFor="order-code">Mã đơn</label><div className="entry-row"><input id="order-code" value={orderCode} onChange={(event) => setOrderCode(event.target.value)} placeholder="Ví dụ: DH-2026-001" maxLength={255} disabled={inputLocked} /><button className="button button-quiet" onClick={scan} disabled={inputLocked}>{scanning ? 'Đóng máy quét' : <>▦ Quét QR <kbd>Q</kbd></>}</button></div>
       {scanning && <div className="scanner-box"><video id="qr-video" autoPlay muted playsInline /><span>Đưa mã QR vào khung hình</span><button className="button button-quiet" onClick={closeScanner}>Đóng</button></div>}
       {cameraError && <div className="notice notice-error">{cameraError}</div>}
     </div>
@@ -227,7 +226,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
     {phase === 'uploading' && <div className="upload-state"><div className="spinner"/><div><strong>Đang lưu video{progress > 0 ? ` · ${progress}%` : '…'}</strong><span>Giữ trang này mở trong khi tải lên.</span></div></div>}
     {phase === 'failed' && <div className="retry-card"><div><strong>Video chưa được lưu</strong><span>Bản quay còn trong bộ nhớ trình duyệt. Thử lại để lưu đúng video này.</span></div><button className="button button-primary" onClick={() => captured && void send(captured)}>Thử tải lại</button></div>}
     {error && <div className="notice notice-error" role="alert">{error}</div>}
-    <div className="recorder-footer"><div className="format-note"><span className="secure-dot"/> Định dạng: {mime || mimeChoice() || 'Tự động chọn'}</div><div className="record-actions">{phase === 'recording' ? <><span className="live-duration"><i /> {duration}</span><button className="button button-stop" onClick={stop}>■ Dừng & lưu <kbd>Alt S</kbd></button></> : phase === 'ready' ? <button className="button button-record" onClick={() => void start()}>● Bắt đầu quay <kbd>Alt R</kbd></button> : null}</div></div>
-    <span className="shortcut-hints">Tạo mới <kbd>Alt N</kbd> <span>·</span> Quét QR <kbd>Alt Q</kbd> <span>·</span> Quay <kbd>Alt R</kbd> <span>·</span> Dừng <kbd>Alt S</kbd></span>
+    <div className="recorder-footer"><div className="format-note"><span className="secure-dot"/> Định dạng: {mime || mimeChoice() || 'Tự động chọn'}</div><div className="record-actions">{phase === 'recording' ? <><span className="live-duration"><i /> {duration}</span><button className="button button-stop" onClick={stop}>■ Dừng & lưu <kbd>S</kbd></button></> : phase === 'ready' ? <button className="button button-record" onClick={() => void start()}>● Bắt đầu quay <kbd>R</kbd></button> : null}</div></div>
+    <span className="shortcut-hints">Tạo mới <kbd>N</kbd> <span>·</span> Quét QR <kbd>Q</kbd> <span>·</span> Quay <kbd>R</kbd> <span>·</span> Dừng <kbd>S</kbd></span>
   </section>;
 }

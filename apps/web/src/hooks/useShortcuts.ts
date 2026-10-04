@@ -8,7 +8,7 @@ const isEditing = (target: EventTarget | null) => {
 export function useShortcuts(actions: Record<string, () => void>) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || isEditing(event.target)) return;
+      if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || isEditing(event.target)) return;
       const key = event.key.toLowerCase();
       const action = actions[key];
       if (!action) return;
