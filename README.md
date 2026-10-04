@@ -13,7 +13,7 @@ docker compose up --build
 
 Open <http://localhost:8080>. The web app is served on port `8080`, the API on `3000`, and PostgreSQL on `5432` by default. Change `WEB_PORT`, `API_PORT`, or `POSTGRES_PORT` in `.env` if those ports are already in use.
 
-Compose starts its own PostgreSQL container with database `record` and user `postgres`. Set `POSTGRES_PASSWORD` in `.env` to configure its password. Inside Compose, the API connects to the database hostname `db`; `localhost` inside a container refers to that container itself.
+Compose starts its own PostgreSQL container with database `record` and user `postgres`. Set `POSTGRES_PASSWORD` in `.env` to configure its password; Compose passes that value to the API container as `DATABASE_PASSWORD`. Inside Compose, the API connects to the database hostname `db`; `localhost` inside a container refers to that container itself.
 
 The database files are stored in `./data/postgres`, and uploaded videos are stored in `./data/videos`. Keep or back up these directories to preserve records and videos. Do not remove them when taking the containers down.
 
@@ -25,7 +25,7 @@ Install Node.js 22 or newer and pnpm 10, then install workspace dependencies:
 pnpm install
 ```
 
-For host-run development, the API must connect to PostgreSQL at `localhost` using database `record`, user `postgres`, and the password configured for that database. The provided `.env.example` documents these values; Compose itself uses the `db` hostname for its API container.
+For host-run development, the API must connect to PostgreSQL at `localhost` using database `record`, user `postgres`, and `DATABASE_PASSWORD` set to that database password. The provided `.env.example` documents these values for the supplied local credentials. If you change the Compose database password, set `POSTGRES_PASSWORD` for Compose; set `DATABASE_PASSWORD` to the host PostgreSQL password when running the API from the host. Compose overrides the host connection settings with its own values, including database hostname `db`.
 
 Start the API and web development servers from the repository root:
 
