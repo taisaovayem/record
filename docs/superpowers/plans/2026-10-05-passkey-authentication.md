@@ -51,7 +51,7 @@
 - `AuthConfig` exposes `rpName`, `rpID`, `origin`, `storageDirectory`, `sessionSecret`, `enrollmentSecret`, and `sessionTtlSeconds` after validating environment variables.
 
 - [ ] Add `@simplewebauthn/server@^14` and `@simplewebauthn/browser@^14` to the relevant workspace packages and update the lockfile.
-- [ ] Implement `FileCredentialStore` to initialize an absent store with a stable random user handle, validate the JSON structure, and atomically persist additions without replacing valid data on failure.
+- [ ] Implement `FileCredentialStore` to initialize a new store with a stable random user handle, validate the JSON structure, atomically persist changes, and use a separately mounted durable marker to fail closed if registered credentials disappear.
 - [ ] Implement configuration loading for `PASSKEY_RP_NAME`, `PASSKEY_RP_ID`, `PASSKEY_ORIGIN`, `PASSKEY_STORAGE_DIR`, `PASSKEY_ENROLLMENT_SECRET`, `AUTH_SESSION_SECRET`, and `AUTH_SESSION_TTL_SECONDS`; use development localhost defaults only outside production and fail startup in production when required values are absent or invalid.
 
 ### Task 2: WebAuthn ceremonies, enrollment CLI, sessions, and API guard
@@ -115,7 +115,7 @@
 - Modify: `apps/web/nginx.conf`
 - Modify: `README.md`
 
-- [ ] Mount `./data/auth:/app/data/auth` into the API and set `PASSKEY_STORAGE_DIR=/app/data/auth`.
+- [ ] Mount `./data/auth:/app/data/auth` and `./data/auth-state:/app/data/auth-state` into the API; the separate state marker detects a missing or unexpectedly emptied registered credential file.
 - [ ] Keep the default local Compose setup independent of the server's network; in `docker-compose.server.yml`, keep PostgreSQL/API on the app's private network and connect only web to external `web_network` with alias `packing-record-web`.
 - [ ] Document adding a `server_name shopee.saovayem.com` block to the existing Nginx configuration, proxying to `http://packing-record-web:80`; the existing `nginx-proxy` is already on `web_network`, so no other container or network needs to be reconnected.
 - [ ] Document that inter-container traffic uses container ports (web `80`, API `3000`, PostgreSQL `5432`), independent of host-published ports. Host port mappings can be set to unused values in `.env`, or disabled for services that do not need host access.

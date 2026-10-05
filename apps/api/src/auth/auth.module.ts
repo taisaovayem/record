@@ -14,7 +14,11 @@ import { SessionService } from './session.service.js';
     { provide: AUTH_CONFIG, useFactory: () => loadAuthConfig() },
     {
       provide: CREDENTIAL_STORE,
-      useFactory: (config: ReturnType<typeof loadAuthConfig>) => new FileCredentialStore(config.storageDirectory),
+      useFactory: async (config: ReturnType<typeof loadAuthConfig>) => {
+        const store = new FileCredentialStore(config.storageDirectory, config.stateDirectory);
+        await store.initialize();
+        return store;
+      },
       inject: [AUTH_CONFIG],
     },
     AuthService,

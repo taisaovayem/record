@@ -35,6 +35,7 @@ services:
       PASSKEY_RP_ID: ${PASSKEY_RP_ID:-localhost}
       PASSKEY_ORIGIN: ${PASSKEY_ORIGIN:-http://localhost:8080}
       PASSKEY_STORAGE_DIR: /app/data/auth
+      PASSKEY_STATE_DIR: /app/data/auth-state
       PASSKEY_ENROLLMENT_SECRET: ${PASSKEY_ENROLLMENT_SECRET:-}
       AUTH_SESSION_SECRET: ${AUTH_SESSION_SECRET:-}
       AUTH_SESSION_TTL_SECONDS: ${AUTH_SESSION_TTL_SECONDS:-28800}
@@ -43,6 +44,7 @@ services:
     volumes:
       - ./data/videos:/app/data/videos
       - ./data/auth:/app/data/auth
+      - ./data/auth-state:/app/data/auth-state
     depends_on:
       db:
         condition: service_healthy

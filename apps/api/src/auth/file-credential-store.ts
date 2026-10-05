@@ -9,14 +9,25 @@ interface CredentialFile {
   credentials: StoredCredential[];
 }
 
+interface StoreState {
+  version: 1;
+  credentialsExpected: boolean;
+}
+
 export class FileCredentialStore implements CredentialStore {
   private cached?: CredentialFile;
   private loading?: Promise<CredentialFile>;
   private writes: Promise<unknown> = Promise.resolve();
   private readonly filePath: string;
+  private readonly statePath: string;
 
-  constructor(directory: string) {
+  constructor(directory: string, stateDirectory: string) {
     this.filePath = join(directory, 'passkeys.json');
+    this.statePath = join(stateDirectory, 'state.json');
+  }
+
+  async initialize(): Promise<void> {
+    await this.load();
   }
 
   async getUserHandle(): Promise<string> {
@@ -58,12 +69,14 @@ export class FileCredentialStore implements CredentialStore {
 
   private async readOrInitialize(): Promise<CredentialFile> {
     await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
+    await mkdir(dirname(this.statePath), { recursive: true, mode: 0o700 });
+    const state = await this.readState();
+    let store: CredentialFile | undefined;
     try {
       const data = await readFile(this.filePath, 'utf8');
       const parsed: unknown = JSON.parse(data);
-      const store = validateCredentialFile(parsed);
+      store = validateCredentialFile(parsed);
       await chmod(this.filePath, 0o600);
-      return store;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         if (error instanceof SyntaxError) throw new Error('Passkey credential file contains invalid JSON');
@@ -71,12 +84,56 @@ export class FileCredentialStore implements CredentialStore {
       }
     }
 
+    if (store) {
+      if (state?.credentialsExpected && store.credentials.length === 0) {
+        throw new Error('Passkey credential file is empty but registered credentials are expected; restore it from backup');
+      }
+      if (!state || (store.credentials.length > 0 && !state.credentialsExpected)) {
+        await this.writeState({ version: 1, credentialsExpected: store.credentials.length > 0 });
+      }
+      return store;
+    }
+
+    if (state?.credentialsExpected) {
+      throw new Error('Passkey credential file is missing but registered credentials are expected; restore it from backup');
+    }
+
     const initial: CredentialFile = {
       version: 1,
       userHandle: randomBytes(32).toString('base64url'),
       credentials: [],
     };
-    return this.createInitial(initial);
+    const created = await this.createInitial(initial);
+    if (!state) await this.writeState({ version: 1, credentialsExpected: false });
+    return created;
+  }
+
+  private async readState(): Promise<StoreState | undefined> {
+    try {
+      const value: unknown = JSON.parse(await readFile(this.statePath, 'utf8'));
+      if (!value || typeof value !== 'object') throw new Error('Passkey storage state has an invalid shape');
+      const state = value as Partial<StoreState>;
+      if (state.version !== 1 || typeof state.credentialsExpected !== 'boolean') {
+        throw new Error('Passkey storage state has an invalid shape');
+      }
+      await chmod(this.statePath, 0o600);
+      return state as StoreState;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+      if (error instanceof SyntaxError) throw new Error('Passkey storage state contains invalid JSON');
+      throw error;
+    }
+  }
+
+  private async writeState(state: StoreState): Promise<void> {
+    const temporary = `${this.statePath}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporary, JSON.stringify(state, null, 2), { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      await rename(temporary, this.statePath);
+      await chmod(this.statePath, 0o600);
+    } finally {
+      await rm(temporary, { force: true });
+    }
   }
 
   private async createInitial(store: CredentialFile): Promise<CredentialFile> {
@@ -108,6 +165,7 @@ export class FileCredentialStore implements CredentialStore {
       } finally {
         await rm(temporary, { force: true });
       }
+      if (store.credentials.length > 0) await this.writeState({ version: 1, credentialsExpected: true });
     });
     this.writes = operation.catch(() => undefined);
     return operation;

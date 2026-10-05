@@ -56,7 +56,7 @@ PASSKEY_ENROLLMENT_SECRET=<first generated value>
 AUTH_SESSION_SECRET=<second generated value>
 ```
 
-The API stores credentials in `./data/auth`, mounted at `/app/data/auth`. Run the app with the server override so only the `web` container joins the existing external `web_network`; PostgreSQL and API stay on the app's private Compose network:
+The API stores credentials in `./data/auth`, mounted at `/app/data/auth`, and tracks initialization plus whether a credential has ever been registered in the separate `./data/auth-state` directory. If registered credentials go missing or the credential file becomes empty, the API fails closed and requires restoring the backup. Run the app with the server override so only the `web` container joins the existing external `web_network`; PostgreSQL and API stay on the app's private Compose network:
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build
@@ -91,7 +91,7 @@ To add the first passkey (or another recovery passkey), run the command inside t
 docker compose -f docker-compose.yml -f docker-compose.server.yml exec api pnpm --filter @packing-video-manager/api auth:enroll
 ```
 
-Each enrollment authorization expires after ten minutes and can be used once. The browser saves the private key in Google Password Manager; the server file stores the public credential data only. Back up `./data/auth` alongside `./data/postgres` and `./data/videos`.
+Each enrollment authorization expires after ten minutes and can be used once. The browser saves the private key in Google Password Manager; the server file stores the public credential data only. Back up both `./data/auth` and `./data/auth-state` alongside `./data/postgres` and `./data/videos`.
 
 ## Run services from the host
 
@@ -129,6 +129,7 @@ Persistent data lives here:
 - `./data/postgres` — PostgreSQL database files.
 - `./data/videos` — uploaded video files.
 - `./data/auth` — passkey credential file; it contains public keys and credential metadata, not private keys.
+- `./data/auth-state` — passkey-store initialization marker; keep it with `./data/auth` during backup and restore.
 - `.env` — local configuration (ignored by Git; create it from `.env.example`).
 
-Back up all three data directories to preserve records, videos, and passkeys. Stop the stack before copying them so PostgreSQL files and database metadata are consistent. Do not delete these directories when bringing containers down. Compose binds PostgreSQL to host loopback port `5433` by default so it can run alongside a host PostgreSQL server on `5432`; use `localhost` for the host-run API and `db` only for the API running inside Compose.
+Back up all data directories to preserve records, videos, and passkeys. Stop the stack before copying them so PostgreSQL files and database metadata are consistent. Do not delete these directories when bringing containers down. Compose binds PostgreSQL to host loopback port `5433` by default so it can run alongside a host PostgreSQL server on `5432`; use `localhost` for the host-run API and `db` only for the API running inside Compose.
