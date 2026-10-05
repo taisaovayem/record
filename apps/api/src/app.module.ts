@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RecordsModule } from './records/records.module.js';
 import { RecordEntity } from './records/record.entity.js';
+import { AuthModule } from './auth/auth.module.js';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { RecordEntity } from './records/record.entity.js';
       retryAttempts: 20,
       retryDelay: 3000,
     }),
+    AuthModule,
     RecordsModule,
   ],
 })

@@ -1,0 +1,12 @@
+services:
+  web:
+    networks:
+      default: {}
+      web_network:
+        aliases:
+          - packing-record-web
+
+networks:
+  web_network:
+    external: true
+    name: web_network

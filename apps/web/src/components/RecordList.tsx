@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { deleteRecords, downloadUrl, listRecords, type PackingRecord, type RecordPage } from '../api/records';
+import { getSession } from '../api/auth';
 
 interface Props {
   onNew: () => void;
@@ -59,6 +60,19 @@ export default function RecordList({ onNew, refreshKey, onScan }: Props) {
       setError(reason instanceof Error ? reason.message : 'Không xóa được các video.');
     } finally { setDeleting(false); }
   };
+  const download = async (event: MouseEvent<HTMLAnchorElement>, record: PackingRecord) => {
+    event.preventDefault();
+    try {
+      const session = await getSession();
+      if (!session.authenticated) {
+        window.dispatchEvent(new Event('packing-auth-expired'));
+        return;
+      }
+      window.location.assign(downloadUrl(record.id));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Không tải được video.');
+    }
+  };
 
   return <section className="list-panel">
     <div className="list-heading">
@@ -78,7 +92,7 @@ export default function RecordList({ onNew, refreshKey, onScan }: Props) {
         <tbody>{loading ? <tr><td colSpan={4} className="table-state">Đang tải danh sách…</td></tr> : result.items.length === 0 ? <tr><td colSpan={4} className="table-state"><div className="empty-icon">▤</div><strong>{search ? 'Không tìm thấy đơn hàng' : 'Chưa có video nào'}</strong><span>{search ? 'Thử một mã đơn khác.' : 'Bắt đầu bằng cách tạo bản quay đầu tiên.'}</span></td></tr> : result.items.map((record) => <tr key={record.id}>
           <td className="check-cell"><input type="checkbox" aria-label={`Chọn đơn ${record.orderCode}`} checked={selection.has(record.id)} onChange={() => toggle(record)} /></td>
           <td><span className="order-code">{record.orderCode}</span></td><td className="date-cell">{formatDate(record.recordedAt)}</td>
-          <td className="action-cell"><a className="download-link" href={downloadUrl(record.id)} download title={`Tải video đơn ${record.orderCode}`}><span aria-hidden="true">↓</span> Tải video</a></td>
+          <td className="action-cell"><a className="download-link" href={downloadUrl(record.id)} onClick={(event) => void download(event, record)} title={`Tải video đơn ${record.orderCode}`}><span aria-hidden="true">↓</span> Tải video</a></td>
         </tr>)}</tbody>
       </table>
     </div>

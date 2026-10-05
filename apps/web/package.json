@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@simplewebauthn/browser": "^14.0.0",
     "@zxing/browser": "^0.1.5",
     "@vitejs/plugin-react": "^4.4.1",
     "react": "^19.1.0",

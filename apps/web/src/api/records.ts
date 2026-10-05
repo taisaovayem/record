@@ -23,6 +23,7 @@ const apiBase = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '')
 
 async function checked<T>(response: Response): Promise<T> {
   if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new Event('packing-auth-expired'));
     const body = await response.json().catch(() => null) as { message?: string } | null;
     throw new Error(body?.message ?? `Yêu cầu thất bại (${response.status})`);
   }
@@ -44,6 +45,7 @@ export function uploadRecord(orderCode: string, blob: Blob, filename: string, ca
     };
     request.onerror = () => reject(new Error('Không thể kết nối máy chủ. Video vẫn được giữ để thử tải lại.'));
     request.onload = () => {
+      if (request.status === 401) window.dispatchEvent(new Event('packing-auth-expired'));
       let body: { message?: string } & Partial<PackingRecord> = {};
       try { body = JSON.parse(request.responseText) as typeof body; } catch { /* handled below */ }
       if (request.status < 200 || request.status >= 300) {
