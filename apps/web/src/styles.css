@@ -544,6 +544,22 @@ input[type="checkbox"] {
 .timer {
   right: 12px;
 }
+.gesture-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  max-width: calc(100% - 24px);
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  border-radius: 20px;
+  background: #171b18c9;
+  color: white;
+  font-size: 11px;
+  text-align: center;
+}
+.gesture-hint-error {
+  background: #8c3e36e8;
+}
 .recorder-footer {
   display: flex;
   align-items: center;

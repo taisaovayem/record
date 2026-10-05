@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BrowserQRCodeReader } from '@zxing/browser';
+import type { GestureRecognizer } from '@mediapipe/tasks-vision';
 import { uploadRecord } from '../api/records';
 
 interface Props { initialOrderCode?: string; onSaved: () => void; onCancel: () => void; autoScan?: boolean; continuous: boolean; onContinuousChange: (enabled: boolean) => void }
 type Phase = 'ready' | 'requesting' | 'recording' | 'uploading' | 'failed';
+type GestureStatus = 'idle' | 'loading' | 'ready' | 'error';
 interface CapturedVideo { blob: Blob; mime: string; captureId: string; recordedAt: string; orderCode: string }
 
 const candidates = ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
@@ -31,6 +33,8 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
   const [mime, setMime] = useState('');
   const [captured, setCaptured] = useState<CapturedVideo | null>(null);
   const [scanCycle, setScanCycle] = useState(0);
+  const [gestureStatus, setGestureStatus] = useState<GestureStatus>('idle');
+  const [gestureError, setGestureError] = useState('');
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -210,6 +214,81 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
     if (recorder && recorder.state !== 'inactive') recorder.stop();
   };
 
+  useEffect(() => {
+    if (!continuous || phase !== 'recording') {
+      setGestureStatus('idle');
+      setGestureError('');
+      return;
+    }
+
+    let active = true;
+    let animationFrame = 0;
+    let recognizer: GestureRecognizer | null = null;
+    let lastVideoTime = -1;
+    let lastInferenceAt = 0;
+    let thumbsUpSince = 0;
+    let stopRequested = false;
+    setGestureStatus('loading');
+    setGestureError('');
+
+    const initialize = async () => {
+      try {
+        const { FilesetResolver, GestureRecognizer: Recognizer } = await import('@mediapipe/tasks-vision');
+        if (!active) return;
+        const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm');
+        if (!active) return;
+        recognizer = await Recognizer.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: `${import.meta.env.BASE_URL}models/gesture_recognizer.task` },
+          runningMode: 'VIDEO',
+          numHands: 1,
+          cannedGesturesClassifierOptions: { categoryAllowlist: ['Thumb_Up'], scoreThreshold: 0.8 },
+        });
+        if (!active) { recognizer.close(); recognizer = null; return; }
+        setGestureStatus('ready');
+
+        const detectGesture = () => {
+          if (!active || stopRequested) return;
+          const video = videoRef.current;
+          const now = performance.now();
+          if (video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.currentTime !== lastVideoTime && now - lastInferenceAt >= 180) {
+            lastVideoTime = video.currentTime;
+            lastInferenceAt = now;
+            try {
+              const result = recognizer!.recognizeForVideo(video, now);
+              const topGesture = result.gestures[0]?.[0];
+              if (topGesture?.categoryName === 'Thumb_Up' && topGesture.score >= 0.8) {
+                if (!thumbsUpSince) thumbsUpSince = now;
+                if (now - thumbsUpSince >= 700) {
+                  stopRequested = true;
+                  stop();
+                  return;
+                }
+              } else thumbsUpSince = 0;
+            } catch (reason) {
+              active = false;
+              setGestureStatus('error');
+              setGestureError(reason instanceof Error ? reason.message : 'Không thể phân tích hình ảnh camera.');
+              return;
+            }
+          }
+          animationFrame = window.requestAnimationFrame(detectGesture);
+        };
+        detectGesture();
+      } catch (reason) {
+        if (!active) return;
+        setGestureStatus('error');
+        setGestureError(reason instanceof Error ? reason.message : 'Không thể khởi tạo nhận diện cử chỉ.');
+      }
+    };
+
+    void initialize();
+    return () => {
+      active = false;
+      window.cancelAnimationFrame(animationFrame);
+      recognizer?.close();
+    };
+  }, [continuous, phase]);
+
   const send = async (capture: CapturedVideo) => {
     if (mountedRef.current) { setPhase('uploading'); setError(''); setProgress(0); }
     try {
@@ -251,7 +330,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
       {scanning && <div className="scanner-box"><video id="qr-video" autoPlay muted playsInline /><span>Đưa mã QR vào khung hình</span><button className="button button-quiet" onClick={closeScanner}>Đóng</button></div>}
       {cameraError && <div className="notice notice-error">{cameraError}</div>}
     </div>
-    {phase === 'recording' && <div className="camera-preview"><video ref={videoRef} autoPlay muted playsInline /><span className="recording-badge"><i /> ĐANG QUAY</span><span className="timer">{duration}</span></div>}
+    {phase === 'recording' && <div className="camera-preview"><video ref={videoRef} autoPlay muted playsInline /><span className="recording-badge"><i /> ĐANG QUAY</span><span className="timer">{duration}</span>{continuous && <span className={`gesture-hint${gestureStatus === 'error' ? ' gesture-hint-error' : ''}`}>{gestureStatus === 'loading' ? 'Đang khởi tạo nhận diện…' : gestureStatus === 'error' ? `Nhận diện cử chỉ lỗi · Dùng nút lưu${gestureError ? ` (${gestureError})` : ''}` : '👍 Giơ ngón cái và giữ để dừng, lưu'}</span>}</div>}
     {phase === 'ready' && <div className="recording-placeholder"><div className="camera-symbol">◉</div><strong>Sẵn sàng ghi hình</strong><span>Đặt hàng trong khung hình rồi bắt đầu quay.</span></div>}
     {phase === 'requesting' && <div className="upload-state"><div className="spinner"/><div><strong>Đang chờ quyền camera…</strong><span>Hãy chọn Cho phép trong thông báo của trình duyệt.</span></div></div>}
     {phase === 'uploading' && <div className="upload-state"><div className="spinner"/><div><strong>Đang lưu video{progress > 0 ? ` · ${progress}%` : '…'}</strong><span>Giữ trang này mở trong khi tải lên.</span></div></div>}
