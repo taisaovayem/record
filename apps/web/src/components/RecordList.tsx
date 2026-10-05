@@ -62,17 +62,19 @@ export default function RecordList({ onNew, refreshKey, onScan }: Props) {
 
   return <section className="list-panel">
     <div className="list-heading">
-      <div><p className="eyebrow">KHO LƯU TRỮ</p><h2>Các lần đóng gói</h2><p className="muted">{result.total} video · mới nhất trước</p></div>
+      <div>
+        <div className="toolbar">
+          <label className="search-box"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Tìm theo mã đơn" aria-label="Tìm theo mã đơn" />{search && <button aria-label="Xóa tìm kiếm" className="icon-button" onClick={() => setSearch('')}>×</button>}</label>
+          <button className="button button-quiet" onClick={onScan}><span aria-hidden="true">▦</span> Quét QR <kbd>Q</kbd></button>
+          {selection.size > 0 && <button className="button button-danger" onClick={remove} disabled={deleting}>{deleting ? 'Đang xóa…' : `Xóa ${selection.size} mục`}</button>}
+        </div>
+      </div>
       <button className="button button-primary" onClick={onNew}>＋ <span>Tạo bản quay</span> <kbd>N</kbd></button>
     </div>
-    <div className="toolbar">
-      <label className="search-box"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Tìm theo mã đơn" aria-label="Tìm theo mã đơn" />{search && <button aria-label="Xóa tìm kiếm" className="icon-button" onClick={() => setSearch('')}>×</button>}</label>
-      <button className="button button-quiet" onClick={onScan}><span aria-hidden="true">▦</span> Quét QR <kbd>Q</kbd></button>
-      {selection.size > 0 && <button className="button button-danger" onClick={remove} disabled={deleting}>{deleting ? 'Đang xóa…' : `Xóa ${selection.size} mục`}</button>}
-    </div>
+    
     {error && <div className="notice notice-error" role="alert">{error}<button className="icon-button" onClick={() => setError('')}>×</button></div>}
     <div className="table-wrap">
-      <table><thead><tr><th className="check-cell"><input type="checkbox" aria-label="Chọn tất cả trên trang" checked={allSelected} onChange={togglePage} disabled={!result.items.length} /></th><th>MÃ ĐƠN</th><th>THỜI GIAN QUAY</th><th className="action-heading">VIDEO</th></tr></thead>
+      <table><thead><tr><th className="check-cell"><input type="checkbox" aria-label="Chọn tất cả trên trang" checked={allSelected} onChange={togglePage} disabled /></th><th>MÃ ĐƠN</th><th>THỜI GIAN QUAY</th><th className="action-heading">VIDEO</th></tr></thead>
         <tbody>{loading ? <tr><td colSpan={4} className="table-state">Đang tải danh sách…</td></tr> : result.items.length === 0 ? <tr><td colSpan={4} className="table-state"><div className="empty-icon">▤</div><strong>{search ? 'Không tìm thấy đơn hàng' : 'Chưa có video nào'}</strong><span>{search ? 'Thử một mã đơn khác.' : 'Bắt đầu bằng cách tạo bản quay đầu tiên.'}</span></td></tr> : result.items.map((record) => <tr key={record.id}>
           <td className="check-cell"><input type="checkbox" aria-label={`Chọn đơn ${record.orderCode}`} checked={selection.has(record.id)} onChange={() => toggle(record)} /></td>
           <td><span className="order-code">{record.orderCode}</span></td><td className="date-cell">{formatDate(record.recordedAt)}</td>
