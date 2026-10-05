@@ -320,6 +320,7 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 14px;
   padding-bottom: 17px;
   border-bottom: 1px solid #efeee9;
 }
@@ -332,6 +333,60 @@ input[type="checkbox"] {
 }
 .back-button:hover {
   color: var(--green);
+}
+.back-button kbd {
+  margin-left: 3px;
+}
+.continuous-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #51574f;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.continuous-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.continuous-track {
+  width: 34px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: #c9ccc5;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.continuous-track::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  margin-left: 3px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px #0002;
+  transition: transform 0.15s;
+}
+.continuous-toggle:checked + .continuous-track {
+  background: var(--green);
+}
+.continuous-toggle:checked + .continuous-track::after {
+  transform: translateX(14px);
+}
+.continuous-toggle:focus-visible + .continuous-track {
+  outline: 3px solid #edf3ed;
+  outline-offset: 2px;
+}
+.continuous-toggle:disabled + .continuous-track {
+  cursor: not-allowed;
 }
 .recorder-intro {
   display: flex;
@@ -675,6 +730,9 @@ input[type="checkbox"] {
   }
   .recorder-intro {
     margin: 20px 0 16px;
+  }
+  .recorder-top {
+    flex-wrap: wrap;
   }
   .recorder-footer {
     align-items: flex-start;

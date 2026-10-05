@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { BrowserQRCodeReader } from '@zxing/browser';
 import { uploadRecord } from '../api/records';
 
-interface Props { initialOrderCode?: string; onSaved: () => void; onCancel: () => void; autoScan?: boolean }
+interface Props { initialOrderCode?: string; onSaved: () => void; onCancel: () => void; autoScan?: boolean; continuous: boolean; onContinuousChange: (enabled: boolean) => void }
 type Phase = 'ready' | 'requesting' | 'recording' | 'uploading' | 'failed';
 interface CapturedVideo { blob: Blob; mime: string; captureId: string; recordedAt: string; orderCode: string }
 
@@ -20,7 +20,7 @@ function captureUuid() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-export default function Recorder({ initialOrderCode = '', onSaved, onCancel, autoScan = false }: Props) {
+export default function Recorder({ initialOrderCode = '', onSaved, onCancel, autoScan = false, continuous, onContinuousChange }: Props) {
   const [orderCode, setOrderCode] = useState(initialOrderCode);
   const [phase, setPhase] = useState<Phase>('ready');
   const [error, setError] = useState('');
@@ -30,6 +30,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
   const [elapsed, setElapsed] = useState(0);
   const [mime, setMime] = useState('');
   const [captured, setCaptured] = useState<CapturedVideo | null>(null);
+  const [scanCycle, setScanCycle] = useState(0);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -40,6 +41,9 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
   const scannerRef = useRef<BrowserQRCodeReader | null>(null);
   const scannerAttemptRef = useRef<{ cancelled: boolean; decoded: boolean } | null>(null);
   const scannerControlsRef = useRef<{ attempt: { cancelled: boolean; decoded: boolean }; controls: { stop: () => void } } | null>(null);
+  const continuousRef = useRef(continuous);
+  continuousRef.current = continuous;
+  const autoStartAfterScanRef = useRef<{ attempt: { cancelled: boolean; decoded: boolean }; orderCode: string } | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -63,7 +67,15 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
     return () => window.clearInterval(timer);
   }, [phase]);
 
-  useEffect(() => { if (autoScan) void scan(); }, [autoScan]);
+  useEffect(() => {
+    if (!autoScan && !continuous) return;
+    const timer = window.setTimeout(() => { void scan(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (scanCycle > 0 && phase === 'ready' && continuous) void scan();
+  }, [scanCycle, phase]);
 
   const releaseQrCamera = async () => {
     const { BrowserCodeReader } = await import('@zxing/browser');
@@ -98,8 +110,13 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
       const controls = await reader.decodeFromVideoDevice(undefined, 'qr-video', (result) => {
         if (!result || attempt.cancelled || attempt.decoded || !mountedRef.current) return;
         attempt.decoded = true;
-        setOrderCode(result.getText());
+        const code = result.getText();
+        setOrderCode(code);
         closeScanner();
+        if (continuousRef.current) {
+          if (scannerAttemptRef.current === attempt) autoStartAfterScanRef.current = { attempt, orderCode: code };
+          else void releaseQrCamera().finally(() => { if (continuousRef.current && mountedRef.current) void start(code); });
+        }
       });
       if (attempt.cancelled || attempt.decoded) {
         controls.stop();
@@ -107,6 +124,11 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
         if (scannerControlsRef.current?.attempt === attempt) scannerControlsRef.current = null;
         if (scannerRef.current === reader) scannerRef.current = null;
         if (scannerAttemptRef.current === attempt) scannerAttemptRef.current = null;
+        const pendingStart = autoStartAfterScanRef.current;
+        if (pendingStart?.attempt === attempt) {
+          autoStartAfterScanRef.current = null;
+          if (continuousRef.current && mountedRef.current) void start(pendingStart.orderCode);
+        }
         return;
       }
       scannerControlsRef.current = { attempt, controls };
@@ -129,9 +151,9 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
     if (videoRef.current?.srcObject === stream) videoRef.current.srcObject = null;
   };
 
-  const start = async () => {
+  const start = async (orderCodeOverride = orderCode) => {
     if (startGuardRef.current || phase !== 'ready') return;
-    if (!orderCode.trim()) { setError('Nhập mã đơn trước khi quay.'); document.getElementById('order-code')?.focus(); return; }
+    if (!orderCodeOverride.trim()) { setError('Nhập mã đơn trước khi quay.'); document.getElementById('order-code')?.focus(); return; }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { setCameraError('Trình duyệt này chưa hỗ trợ quay video. Hãy mở ứng dụng bằng localhost hoặc HTTPS trên trình duyệt hiện đại.'); return; }
     closeScanner(); setError(''); setCameraError('');
     if (scannerAttemptRef.current) { setCameraError('Đang đóng máy quét QR. Vui lòng đợi một chút rồi thử quay lại.'); return; }
@@ -167,7 +189,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
         startGuardRef.current = false;
         if (!mountedRef.current) return;
         if (!capture.size) { setPhase('ready'); setCameraError('Không thu được dữ liệu video. Vui lòng kiểm tra camera và thử lại.'); return; }
-        const savedCapture = { blob: capture, mime: type, captureId: captureUuid(), recordedAt: stopTime, orderCode: orderCode.trim() };
+        const savedCapture = { blob: capture, mime: type, captureId: captureUuid(), recordedAt: stopTime, orderCode: orderCodeOverride.trim() };
         setCaptured(savedCapture); setMime(type); setPhase('uploading'); void send(savedCapture);
       };
       recorder.start(1000);
@@ -196,6 +218,14 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
       if (!mountedRef.current) return;
       setCaptured(null);
       onSaved();
+      if (continuousRef.current) {
+        setOrderCode('');
+        setPhase('ready');
+        setError('');
+        setScanCycle((cycle) => cycle + 1);
+      } else {
+        onCancel();
+      }
     } catch (reason) {
       if (!mountedRef.current) return;
       setCaptured(capture); setPhase('failed');
@@ -213,8 +243,9 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
 
   const duration = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(elapsed % 60).padStart(2, '0')}`;
   const inputLocked = phase === 'requesting' || phase === 'recording' || phase === 'uploading' || Boolean(captured);
+  const modeLocked = phase === 'requesting' || phase === 'recording' || phase === 'uploading' || phase === 'failed' || Boolean(captured);
   return <section className="recorder-panel">
-    <div className="recorder-top"><button className="back-button" onClick={cancel} disabled={phase === 'recording' || phase === 'uploading' || Boolean(captured)}>← Danh sách</button><span className="eyebrow">BẢN QUAY MỚI</span></div>
+    <div className="recorder-top"><button className="back-button" onClick={cancel} disabled={phase === 'requesting' || phase === 'recording' || phase === 'uploading' || Boolean(captured)}>← Danh sách <kbd>W</kbd></button><span className="eyebrow">BẢN QUAY MỚI</span><label className="continuous-switch"><input className="continuous-toggle" type="checkbox" role="switch" checked={continuous} disabled={modeLocked} onChange={(event) => onContinuousChange(event.target.checked)} /><span className="continuous-track" aria-hidden="true"/><span>Đóng hàng liên tục <kbd>I</kbd></span></label></div>
     <div className="recorder-intro"><div><p className="eyebrow">GHI LẠI QUÁ TRÌNH ĐÓNG GÓI</p><h2>Mã đơn hàng</h2><p className="muted">Quét mã hoặc nhập mã đơn cần lưu video.</p></div><span className="recorder-step">01 <i>/</i> 01</span></div>
     <div className="order-entry"><label htmlFor="order-code">Mã đơn</label><div className="entry-row"><input id="order-code" value={orderCode} onChange={(event) => setOrderCode(event.target.value)} placeholder="Ví dụ: DH-2026-001" maxLength={255} disabled={inputLocked} /><button className="button button-quiet" onClick={scan} disabled={inputLocked}>{scanning ? 'Đóng máy quét' : <>▦ Quét QR <kbd>Q</kbd></>}</button></div>
       {scanning && <div className="scanner-box"><video id="qr-video" autoPlay muted playsInline /><span>Đưa mã QR vào khung hình</span><button className="button button-quiet" onClick={closeScanner}>Đóng</button></div>}
@@ -227,6 +258,6 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
     {phase === 'failed' && <div className="retry-card"><div><strong>Video chưa được lưu</strong><span>Bản quay còn trong bộ nhớ trình duyệt. Thử lại để lưu đúng video này.</span></div><button className="button button-primary" onClick={() => captured && void send(captured)}>Thử tải lại</button></div>}
     {error && <div className="notice notice-error" role="alert">{error}</div>}
     <div className="recorder-footer"><div className="format-note"><span className="secure-dot"/> Định dạng: {mime || mimeChoice() || 'Tự động chọn'}</div><div className="record-actions">{phase === 'recording' ? <><span className="live-duration"><i /> {duration}</span><button className="button button-stop" onClick={stop}>■ Dừng & lưu <kbd>S</kbd></button></> : phase === 'ready' ? <button className="button button-record" onClick={() => void start()}>● Bắt đầu quay <kbd>R</kbd></button> : null}</div></div>
-    <span className="shortcut-hints">Tạo mới <kbd>N</kbd> <span>·</span> Quét QR <kbd>Q</kbd> <span>·</span> Quay <kbd>R</kbd> <span>·</span> Dừng <kbd>S</kbd></span>
+    <span className="shortcut-hints">Tạo mới <kbd>N</kbd> <span>·</span> Quét QR <kbd>Q</kbd> <span>·</span> Quay <kbd>R</kbd> <span>·</span> Dừng <kbd>S</kbd> <span>·</span> Liên tục <kbd>I</kbd> <span>·</span> Danh sách <kbd>W</kbd></span>
   </section>;
 }
