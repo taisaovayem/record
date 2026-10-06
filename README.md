@@ -29,6 +29,14 @@ Sử dụng local, truy cập [http://localhost:8080](http://localhost:8080). Kh
 docker compose -f docker-compose.yml -f docker-compose.server.yml exec api pnpm --filter @packing-video-manager/api auth:enroll
 ```
 
+chạy đúng proxy
+```sh
+docker compose -f docker-compose.yml -f docker-compose.server.yml up -d web
+docker restart nginx-proxy
+docker logs --tail 30 nginx-proxy
+```
+
+
 # Packing Video Manager
 
 A local web app for recording and managing packing videos. The browser captures video with its camera, then uploads the completed recording to the local API. PostgreSQL stores record information; the database and video files persist under this project directory.
