@@ -11,7 +11,7 @@ Replace file-backed passkey credential storage with PostgreSQL, create a minimal
 - Successful initial registration creates one operator account and associates the verified passkey with it.
 - The operator account needs only a stable ID and name. No email, password, roles, or account-management UI are required.
 - Store account and public passkey credential data in the existing PostgreSQL database.
-- Include the operator ID in authenticated sessions and store it on records created by that operator.
+- Include the operator ID and name in authenticated sessions, show the signed-in operator's name in the app footer, and store the operator ID on records created by that operator.
 - Start authentication storage fresh. Do not import the current JSON credential store or retain its Compose mounts/configuration.
 
 ## Data model
@@ -24,7 +24,7 @@ Add the operator ID to `packing_records`, associated with the operator account t
 
 The existing server command continues to issue a short-lived, single-use enrollment URL. The enrollment page collects the operator name and sends it with the registration ceremony. The backend verifies the challenge, origin, relying-party ID, and user verification as it does today, then persists the operator account and verified credential together. Initial enrollment is rejected once an operator account exists; enrollment does not become a general account-creation mechanism.
 
-Login looks up the submitted credential in PostgreSQL, verifies it using its stored public data, updates the signature counter and metadata, and issues a signed session containing the operator ID. The authentication guard exposes the verified operator ID to protected handlers. Record creation uses that ID from the authenticated session, never a client-supplied ID.
+Login looks up the submitted credential in PostgreSQL, verifies it using its stored public data, updates the signature counter and metadata, and issues a signed session containing the operator ID and operator name. The session endpoint returns the verified name to the web app, which displays it in place of the fixed “Packing Video Manager” footer label. The authentication guard exposes the verified operator ID to protected handlers. Record creation uses that ID from the authenticated session, never a client-supplied ID.
 
 Existing challenge expiry, enrollment authorization checks, browser-origin validation, secure cookie settings, and generic login failure behavior remain in effect.
 
@@ -53,7 +53,7 @@ Multiple operator accounts, roles, password/email login, a passkey management UI
 2. A successfully verified first passkey creates exactly one operator account and its credential in PostgreSQL.
 3. No passkey credential JSON or auth-state file is created or mounted by Compose.
 4. The registered passkey can authenticate; credential counters/metadata update in PostgreSQL.
-5. The signed session identifies the operator, and the API derives identity only from the verified session.
+5. The signed session identifies the operator and carries the operator name; the API derives identity only from the verified session, and the web footer displays the signed-in name.
 6. Every newly created record stores the authenticated operator UUID in `packing_records`.
 7. Repeated initial enrollment, invalid ceremonies, and unauthenticated record writes are rejected.
 8. README and Compose configuration describe and run the database-backed, fresh-enrollment flow.

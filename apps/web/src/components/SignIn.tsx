@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { loginWithPasskey } from '../api/auth';
 
 interface Props {
-  onSignedIn: () => void;
+  onSignedIn: (name: string) => void;
   onRetry: () => void;
   initialError?: string;
 }
@@ -17,8 +17,8 @@ export default function SignIn({ onSignedIn, onRetry, initialError = '' }: Props
     setBusy(true);
     setError('');
     try {
-      await loginWithPasskey();
-      onSignedIn();
+      const session = await loginWithPasskey();
+      onSignedIn(session.name);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Không đăng nhập được bằng passkey.');
     } finally {

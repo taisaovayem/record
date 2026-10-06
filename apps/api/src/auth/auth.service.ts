@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -14,9 +16,13 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
+import { randomUUID } from 'node:crypto';
+import { DataSource, Repository } from 'typeorm';
 import { AUTH_CONFIG, type AuthConfig } from './auth-config.js';
-import { CREDENTIAL_STORE, type CredentialStore, type StoredCredential } from './credential-store.js';
 import { EnrollmentAuthorizationService } from './enrollment-authorization.service.js';
+import { normalizeOperatorName } from './operator-name.js';
+import { OperatorEntity } from './operator.entity.js';
+import { PasskeyCredentialEntity } from './passkey-credential.entity.js';
 import { SessionService, type SessionCookie } from './session.service.js';
 
 @Injectable()
@@ -24,27 +30,33 @@ export class AuthService {
   private readonly loginChallenges = new Map<string, number>();
 
   constructor(
-    @Inject(CREDENTIAL_STORE) private readonly credentials: CredentialStore,
+    @InjectRepository(OperatorEntity) private readonly operators: Repository<OperatorEntity>,
+    private readonly dataSource: DataSource,
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     private readonly enrollments: EnrollmentAuthorizationService,
     private readonly sessions: SessionService,
   ) {}
 
-  async registrationOptions(authorization: string): Promise<PublicKeyCredentialCreationOptionsJSON> {
+  async registrationOptions(authorization: string, name: string): Promise<PublicKeyCredentialCreationOptionsJSON> {
+    const operatorName = normalizeOperatorName(name);
+    if (!operatorName) {
+      throw new BadRequestException('name must contain between 1 and 255 characters');
+    }
     if (!this.enrollments.isValid(authorization)) {
       throw new UnauthorizedException('Enrollment authorization is invalid or expired');
     }
+    if (await this.operators.count()) throw new ConflictException('The operator account has already been registered');
+    const operatorId = randomUUID();
     const options = await generateRegistrationOptions({
       rpName: this.config.rpName,
       rpID: this.config.rpID,
-      userID: Buffer.from(await this.credentials.getUserHandle(), 'base64url'),
-      userName: 'operator',
-      userDisplayName: this.config.rpName,
+      userID: Buffer.from(operatorId.replaceAll('-', ''), 'hex'),
+      userName: operatorName,
+      userDisplayName: operatorName,
       attestationType: 'none',
       authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
-      excludeCredentials: (await this.credentials.list()).map((credential) => ({ id: credential.id, transports: credential.transports })),
     });
-    if (!this.enrollments.bindChallenge(authorization, options.challenge)) {
+    if (!this.enrollments.bindChallenge(authorization, options.challenge, { operatorId, operatorName })) {
       throw new UnauthorizedException('Enrollment authorization is invalid or expired');
     }
     return options;
@@ -53,29 +65,40 @@ export class AuthService {
   async completeRegistration(authorization: string, response: RegistrationResponseJSON): Promise<void> {
     const challenge = this.enrollments.challengeFor(authorization);
     if (!challenge || challenge === 'pending') throw new UnauthorizedException('Enrollment authorization is invalid or expired');
+    const pending = this.enrollments.registrationFor(authorization, challenge);
+    if (!pending) throw new UnauthorizedException('Enrollment authorization is invalid or expired');
+    let verification;
     try {
-      const verification = await verifyRegistrationResponse({
+      verification = await verifyRegistrationResponse({
         response,
         expectedChallenge: challenge,
         expectedOrigin: this.config.origin,
         expectedRPID: this.config.rpID,
         requireUserVerification: true,
       });
-      if (!verification.verified || !verification.registrationInfo.userVerified) throw new UnauthorizedException('Passkey registration was not verified');
-      const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
-      if (!await this.enrollments.consume(authorization, challenge)) throw new UnauthorizedException('Enrollment authorization has already been used');
-      await this.credentials.add({
+    } catch (error) {
+      throw new BadRequestException('Passkey registration response is invalid');
+    }
+    if (!verification.verified || !verification.registrationInfo.userVerified) throw new UnauthorizedException('Passkey registration was not verified');
+    const { credential, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
+    if (!await this.enrollments.consume(authorization, challenge)) throw new UnauthorizedException('Enrollment authorization has already been used');
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock(1330532946, 1)');
+      if (await manager.count(OperatorEntity)) throw new ConflictException('The operator account has already been registered');
+      const operator = manager.create(OperatorEntity, { id: pending.operatorId, name: pending.operatorName });
+      await manager.save(operator);
+      const passkey = manager.create(PasskeyCredentialEntity, {
         id: credential.id,
         publicKey: Buffer.from(credential.publicKey).toString('base64url'),
         counter: credential.counter,
-        transports: credential.transports as StoredCredential['transports'],
+        transports: credential.transports ?? null,
         deviceType: credentialDeviceType,
         backedUp: credentialBackedUp,
+        operatorId: operator.id,
       });
-    } catch (error) {
-      if (error instanceof UnauthorizedException) throw error;
-      throw new BadRequestException('Passkey registration response is invalid');
-    }
+      await manager.save(passkey);
+    });
   }
 
   async authenticationOptions(): Promise<PublicKeyCredentialRequestOptionsJSON> {
@@ -92,30 +115,36 @@ export class AuthService {
     this.loginChallenges.delete(challenge);
     if (!expiresAt || expiresAt <= Date.now()) throw new UnauthorizedException('Passkey sign-in failed');
 
-    const credential = await this.credentials.findById(response.id);
-    if (!credential) throw new UnauthorizedException('Passkey sign-in failed');
     try {
-      const verification = await verifyAuthenticationResponse({
-        response,
-        expectedChallenge: challenge,
-        expectedOrigin: this.config.origin,
-        expectedRPID: this.config.rpID,
-        requireUserVerification: true,
-        credential: {
-          id: credential.id,
-          publicKey: Buffer.from(credential.publicKey, 'base64url'),
-          counter: credential.counter,
-          transports: credential.transports,
-        },
+      return await this.dataSource.transaction(async (manager) => {
+        const credentials = manager.getRepository(PasskeyCredentialEntity);
+        const credential = await credentials.findOne({
+          where: { id: response.id },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!credential) throw new UnauthorizedException('Passkey sign-in failed');
+        const operator = await manager.findOne(OperatorEntity, { where: { id: credential.operatorId } });
+        if (!operator) throw new UnauthorizedException('Passkey sign-in failed');
+        const verification = await verifyAuthenticationResponse({
+          response,
+          expectedChallenge: challenge,
+          expectedOrigin: this.config.origin,
+          expectedRPID: this.config.rpID,
+          requireUserVerification: true,
+          credential: {
+            id: credential.id,
+            publicKey: Buffer.from(credential.publicKey, 'base64url'),
+            counter: credential.counter,
+            transports: credential.transports ?? undefined,
+          },
+        });
+        if (!verification.verified || !verification.authenticationInfo.userVerified) throw new UnauthorizedException('Passkey sign-in failed');
+        credential.counter = verification.authenticationInfo.newCounter;
+        credential.deviceType = verification.authenticationInfo.credentialDeviceType;
+        credential.backedUp = verification.authenticationInfo.credentialBackedUp;
+        await credentials.save(credential);
+        return this.sessions.issue(operator.id, operator.name);
       });
-      if (!verification.verified || !verification.authenticationInfo.userVerified) throw new UnauthorizedException('Passkey sign-in failed');
-      await this.credentials.update({
-        ...credential,
-        counter: verification.authenticationInfo.newCounter,
-        deviceType: verification.authenticationInfo.credentialDeviceType,
-        backedUp: verification.authenticationInfo.credentialBackedUp,
-      });
-      return this.sessions.issue();
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException('Passkey sign-in failed');

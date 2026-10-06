@@ -11,25 +11,25 @@ async function checked<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export async function getSession(): Promise<{ authenticated: boolean }> {
+export async function getSession(): Promise<{ authenticated: boolean; name?: string }> {
   return checked(await fetch(`${apiBase}/auth/session`, { credentials: 'include' }));
 }
 
-export async function loginWithPasskey(): Promise<void> {
+export async function loginWithPasskey(): Promise<{ name: string }> {
   const options = await checked<PublicKeyCredentialRequestOptionsJSON>(await fetch(`${apiBase}/auth/login/options`, {
     method: 'POST', credentials: 'include',
   }));
   const credential = await startAuthentication({ optionsJSON: options });
-  await checked(await fetch(`${apiBase}/auth/login/verify`, {
+  return checked<{ authenticated: true; name: string }>(await fetch(`${apiBase}/auth/login/verify`, {
     method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ credential }),
   }));
 }
 
-export async function registerPasskey(authorization: string): Promise<void> {
+export async function registerPasskey(authorization: string, name: string): Promise<void> {
   const options = await checked<PublicKeyCredentialCreationOptionsJSON>(await fetch(`${apiBase}/auth/register/options`, {
     method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ authorization }),
+    body: JSON.stringify({ authorization, name }),
   }));
   const credential = await startRegistration({ optionsJSON: options });
   await checked(await fetch(`${apiBase}/auth/register/verify`, {

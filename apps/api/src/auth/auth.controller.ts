@@ -27,7 +27,8 @@ export class AuthController {
 
   @Get('session')
   session(@Req() request: Request) {
-    return { authenticated: this.sessions.verify(this.sessions.cookieFromHeader(request.headers.cookie)) };
+    const identity = this.sessions.verify(this.sessions.cookieFromHeader(request.headers.cookie));
+    return identity ? { authenticated: true, name: identity.operatorName } : { authenticated: false };
   }
 
   @Post('enrollments/issue')
@@ -41,7 +42,8 @@ export class AuthController {
   async registrationOptions(@Body() body: unknown, @Headers('origin') origin: string | undefined) {
     this.assertBrowserOrigin(origin);
     const authorization = readStringProperty(body, 'authorization');
-    return this.auth.registrationOptions(authorization);
+    const name = readStringProperty(body, 'name');
+    return this.auth.registrationOptions(authorization, name);
   }
 
   @Post('register/verify')
@@ -69,7 +71,7 @@ export class AuthController {
     const credential = readCredentialResponse(body, 'credential') as AuthenticationResponseJSON;
     const session = await this.auth.completeAuthentication(credential);
     response.cookie(SESSION_COOKIE_NAME, session.value, session.options);
-    return { authenticated: true };
+    return { authenticated: true, name: session.operatorName };
   }
 
   @Post('logout')

@@ -24,7 +24,7 @@ Sử dụng local, truy cập [http://localhost:8080](http://localhost:8080). Kh
 `R` để bắt đầu quay
 `S` để lưu và kêt thúc
 
-## Lệnh thêm passkey
+## Lệnh tạo tài khoản vận hành và passkey đầu tiên
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.server.yml exec api pnpm --filter @packing-video-manager/api auth:enroll
 ```
@@ -61,7 +61,7 @@ PASSKEY_ENROLLMENT_SECRET=<first generated value>
 AUTH_SESSION_SECRET=<second generated value>
 ```
 
-The API stores credentials in `./data/auth`, mounted at `/app/data/auth`, and tracks initialization plus whether a credential has ever been registered in the separate `./data/auth-state` directory. If registered credentials go missing or the credential file becomes empty, the API fails closed and requires restoring the backup. Run the app with the server override so only the `web` container joins the existing external `web_network`; PostgreSQL and API stay on the app's private Compose network:
+Operator accounts and public passkey credentials are stored in PostgreSQL. No separate authentication directory is mounted. Run the app with the server override so only the `web` container joins the existing external `web_network`; PostgreSQL and API stay on the app's private Compose network:
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build
@@ -90,13 +90,13 @@ The web container is also bound to a loopback host port for local checks; the Ng
 
 Passkeys require the browser to load the site through HTTPS. The Nginx configuration shown above listens on port 80 only; mapping host port `443` by itself does not enable TLS. Use Cloudflare Tunnel or configure a certificate and HTTPS listener at the origin before selecting an encrypted Cloudflare-to-origin mode. Cloudflare Full (strict) requires the origin to accept HTTPS on port 443 with a valid matching certificate. [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/)
 
-To add the first passkey (or another recovery passkey), run the command inside the API container and open the one-time URL it prints in the browser:
+To create the operator account and its first passkey, run the command inside the API container and open the one-time URL it prints in the browser. Enter the operator's name on the enrollment page. This one-time enrollment creates the only operator account; it cannot be used later to add another passkey:
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.server.yml exec api pnpm --filter @packing-video-manager/api auth:enroll
 ```
 
-Each enrollment authorization expires after ten minutes and can be used once. The browser saves the private key in Google Password Manager; the server file stores the public credential data only. Back up both `./data/auth` and `./data/auth-state` alongside `./data/postgres` and `./data/videos`.
+Each enrollment authorization expires after ten minutes and can be used once. The browser saves the private key in Google Password Manager; PostgreSQL stores the public credential data. Back up `./data/postgres` and `./data/videos` to preserve accounts, passkeys, records, and recordings.
 
 ## Run services from the host
 
@@ -133,8 +133,6 @@ Persistent data lives here:
 
 - `./data/postgres` — PostgreSQL database files.
 - `./data/videos` — uploaded video files.
-- `./data/auth` — passkey credential file; it contains public keys and credential metadata, not private keys.
-- `./data/auth-state` — passkey-store initialization marker; keep it with `./data/auth` during backup and restore.
 - `.env` — local configuration (ignored by Git; create it from `.env.example`).
 
-Back up all data directories to preserve records, videos, and passkeys. Stop the stack before copying them so PostgreSQL files and database metadata are consistent. Do not delete these directories when bringing containers down. Compose binds PostgreSQL to host loopback port `5433` by default so it can run alongside a host PostgreSQL server on `5432`; use `localhost` for the host-run API and `db` only for the API running inside Compose.
+Back up both data directories to preserve accounts, passkeys, records, and videos. Stop the stack before copying them so PostgreSQL files and database metadata are consistent. Do not delete these directories when bringing containers down. Compose binds PostgreSQL to host loopback port `5433` by default so it can run alongside a host PostgreSQL server on `5432`; use `localhost` for the host-run API and `db` only for the API running inside Compose.

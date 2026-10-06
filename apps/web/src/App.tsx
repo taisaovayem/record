@@ -9,6 +9,7 @@ import { useShortcuts } from './hooks/useShortcuts';
 export default function App() {
   const enrollmentPage = window.location.pathname === '/enroll';
   const [authState, setAuthState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+  const [operatorName, setOperatorName] = useState('');
   const [authError, setAuthError] = useState('');
   const [sessionRefresh, setSessionRefresh] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -36,7 +37,10 @@ export default function App() {
     setAuthState('loading');
     setAuthError('');
     getSession().then((session) => {
-      if (active) setAuthState(session.authenticated ? 'authenticated' : 'unauthenticated');
+      if (active) {
+        setAuthState(session.authenticated ? 'authenticated' : 'unauthenticated');
+        setOperatorName(session.authenticated ? session.name ?? '' : '');
+      }
     }).catch((reason: unknown) => {
       if (active) {
         setAuthState('unauthenticated');
@@ -47,7 +51,10 @@ export default function App() {
   }, [enrollmentPage, sessionRefresh]);
 
   useEffect(() => {
-    const onExpired = () => setAuthState('unauthenticated');
+    const onExpired = () => {
+      setAuthState('unauthenticated');
+      setOperatorName('');
+    };
     window.addEventListener('packing-auth-expired', onExpired);
     return () => window.removeEventListener('packing-auth-expired', onExpired);
   }, []);
@@ -59,6 +66,7 @@ export default function App() {
     try {
       await logout();
       setAuthState('unauthenticated');
+      setOperatorName('');
       setScreen('list');
     } catch (reason) {
       setLogoutError(reason instanceof Error ? reason.message : 'Không đăng xuất được.');
@@ -77,13 +85,13 @@ export default function App() {
 
   if (enrollmentPage) return <div className="auth-shell"><PasskeyEnrollment /></div>;
   if (authState === 'loading') return <div className="auth-shell"><section className="auth-card"><div className="auth-mark" aria-hidden="true">P</div><p className="auth-description">Đang kiểm tra đăng nhập…</p></section></div>;
-  if (authState === 'unauthenticated') return <div className="auth-shell"><SignIn initialError={authError} onRetry={retrySession} onSignedIn={() => { setAuthError(''); setAuthState('authenticated'); }} /></div>;
+  if (authState === 'unauthenticated') return <div className="auth-shell"><SignIn initialError={authError} onRetry={retrySession} onSignedIn={(name) => { setAuthError(''); setOperatorName(name); setAuthState('authenticated'); }} /></div>;
 
   return <div className="app-shell">
-    <header className="auth-toolbar"><span>Packing Video Manager</span><button className="button button-quiet" onClick={() => void signOut()} disabled={loggingOut}>{loggingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button></header>
-    {logoutError && <div className="notice notice-error" role="alert">{logoutError}<button className="icon-button" onClick={() => setLogoutError('')}>×</button></div>}
     <main>
       {screen === 'list' ? <RecordList onNew={newRecord} onScan={scanFromList} refreshKey={refreshKey}/> : <Recorder initialOrderCode={prefill} onSaved={saved} onCancel={exitRecorder} autoScan={scanAfterOpen} continuous={continuous} onContinuousChange={changeContinuous} />}
     </main>
+    <footer className="auth-toolbar"><span>{operatorName}</span><button className="button button-quiet" onClick={() => void signOut()} disabled={loggingOut}>{loggingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button></footer>
+    {logoutError && <div className="notice notice-error" role="alert">{logoutError}<button className="icon-button" onClick={() => setLogoutError('')}>×</button></div>}
   </div>;
 }

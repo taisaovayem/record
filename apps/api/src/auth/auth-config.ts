@@ -1,11 +1,7 @@
-import { isAbsolute, join } from 'node:path';
-
 export interface AuthConfig {
   rpName: string;
   rpID: string;
   origin: string;
-  storageDirectory: string;
-  stateDirectory: string;
   sessionSecret: string;
   enrollmentSecret: string;
   sessionTtlSeconds: number;
@@ -19,16 +15,12 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig
   const rpName = requiredOrDefault(env.PASSKEY_RP_NAME, 'Packing Video Manager', production, 'PASSKEY_RP_NAME');
   const rpID = requiredOrDefault(env.PASSKEY_RP_ID, 'localhost', production, 'PASSKEY_RP_ID').toLowerCase();
   const origin = requiredOrDefault(env.PASSKEY_ORIGIN, 'http://localhost:5173', production, 'PASSKEY_ORIGIN');
-  const storageDirectory = env.PASSKEY_STORAGE_DIR ?? join(process.cwd(), 'data', 'auth');
-  const stateDirectory = env.PASSKEY_STATE_DIR ?? join(process.cwd(), 'data', 'auth-state');
   const sessionSecret = requiredOrDefault(env.AUTH_SESSION_SECRET, 'dev-only-session-secret-change-before-production-123456789', production, 'AUTH_SESSION_SECRET');
   const enrollmentSecret = requiredOrDefault(env.PASSKEY_ENROLLMENT_SECRET, 'dev-only-enrollment-secret-change-before-production-123456789', production, 'PASSKEY_ENROLLMENT_SECRET');
   const sessionTtlSeconds = Number(env.AUTH_SESSION_TTL_SECONDS ?? 28800);
 
   if (!rpName.trim()) throw new Error('PASSKEY_RP_NAME cannot be empty');
   if (!isValidRpId(rpID)) throw new Error('PASSKEY_RP_ID must be a domain name without a scheme, path, or port');
-  if (!isAbsolute(storageDirectory)) throw new Error('PASSKEY_STORAGE_DIR must be an absolute path');
-  if (!isAbsolute(stateDirectory)) throw new Error('PASSKEY_STATE_DIR must be an absolute path');
   if (!Number.isSafeInteger(sessionTtlSeconds) || sessionTtlSeconds < 60 || sessionTtlSeconds > 604800) {
     throw new Error('AUTH_SESSION_TTL_SECONDS must be an integer between 60 and 604800');
   }
@@ -53,7 +45,7 @@ export function loadAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig
   }
   if (production && rpID === 'localhost') throw new Error('PASSKEY_RP_ID must be a public domain in production');
 
-  return { rpName, rpID, origin, storageDirectory, stateDirectory, sessionSecret, enrollmentSecret, sessionTtlSeconds, production };
+  return { rpName, rpID, origin, sessionSecret, enrollmentSecret, sessionTtlSeconds, production };
 }
 
 function requiredOrDefault(value: string | undefined, fallback: string, production: boolean, name: string): string {
