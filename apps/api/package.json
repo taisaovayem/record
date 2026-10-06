@@ -2,8 +2,9 @@
   "name": "@packing-video-manager/api",
   "version": "1.0.0",
   "private": true,
-  "scripts": {"dev":"nest start --watch","build":"nest build","typecheck":"tsc --noEmit","start":"node dist/main.js"},
+  "scripts": {"dev":"nest start --watch","build":"nest build","typecheck":"tsc --noEmit","start":"node dist/main.js","auth:enroll":"node dist/auth/enroll.cli.js"},
   "dependencies": {
+    "@simplewebauthn/server":"^14.0.0",
     "@nestjs/common":"^11.1.6","@nestjs/core":"^11.1.6","@nestjs/platform-express":"^11.1.6","@nestjs/typeorm":"^11.0.0",
     "class-transformer":"^0.5.1","class-validator":"^0.14.2","multer":"^2.0.2","pg":"^8.16.3","reflect-metadata":"^0.2.2","rxjs":"^7.8.2","typeorm":"^0.3.27"
   },

@@ -14,16 +14,28 @@ Nếu khởi động lại máy mà Docker chư bật, thì chỉ cẩn chạy p
 
 Chỉ cần chạy một lần duy nhất, những lần sử dụng sau không cần phải chạy lại nữa
 
-Sử dụng phần mềm, chỉ cần truy cập [http://localhost:8080](http://localhost:8080)
-Truy cập từ máy khác có cùng mạng LAN: `http://<ip máy chủ>:8080`
+Sử dụng local, truy cập [http://localhost:8080](http://localhost:8080). Khi dùng từ máy khác hoặc đưa lên Internet, hãy truy cập qua reverse proxy HTTPS đã cấu hình.
 
-# Lưu ý: Chỉ chạy trong mạng nội bộ, tuyệt đối không chạy trên máy chủ hòa mạng internet vì sẽ bị hack
+# Khi đưa ứng dụng lên Internet, hãy bật passkey, dùng HTTPS cho tên miền và đặt mật khẩu riêng trong `.env`.
 
 ## Hướng dẫn dùng phím tắt
 `N` để tạo bản ghi mới
 `Q` để quét QR đơn
 `R` để bắt đầu quay
 `S` để lưu và kêt thúc
+
+## Lệnh tạo tài khoản vận hành và passkey đầu tiên
+```sh
+docker compose -f docker-compose.yml -f docker-compose.server.yml exec api pnpm --filter @packing-video-manager/api auth:enroll
+```
+
+chạy đúng proxy
+```sh
+docker compose -f docker-compose.yml -f docker-compose.server.yml up -d web
+docker restart nginx-proxy
+docker logs --tail 30 nginx-proxy
+```
+
 
 # Packing Video Manager
 
@@ -35,12 +47,64 @@ Requirements: Docker Engine with the Docker Compose plugin.
 
 ```sh
 cp .env.example .env
+# Generate two different values with `openssl rand -hex 32` and set
+# PASSKEY_ENROLLMENT_SECRET and AUTH_SESSION_SECRET in .env.
 docker compose up --build
 ```
 
-Open <http://localhost:8080>. Compose starts the web app, NestJS API, and its own PostgreSQL container. The default published ports are web `8080`, API `3000`, and PostgreSQL `5433` (mapped to PostgreSQL port `5432` inside Compose); change `WEB_PORT`, `API_PORT`, or `POSTGRES_PORT` in `.env` if needed.
+Open <http://localhost:8080>. Compose starts the web app, NestJS API, and its own PostgreSQL container. The host ports are bound to loopback only; change `WEB_PORT`, `API_PORT`, or `POSTGRES_PORT` in `.env` if any is already occupied. Inter-container communication uses web `80`, API `3000`, and PostgreSQL `5432`, regardless of host port values.
 
-The Compose database is named `record` and uses user `postgres`. Set `POSTGRES_PASSWORD` in `.env` to change its password. The API connects to PostgreSQL using the Compose service hostname `db` (container `localhost` would refer to the API container itself). The web server proxies `/api` requests to `api:3000` on the Compose network.
+The Compose database is named `record` and uses user `postgres`. Set `POSTGRES_PASSWORD` in `.env` to change its password. The API connects to PostgreSQL using the Compose service hostname `db` (container `localhost` would refer to the API container itself). The web server proxies `/api` requests to `api:3000` on the private Compose network. The example `.env` runs local Compose in development mode; production requires explicit passkey settings and non-empty secrets.
+
+## Deploy behind the existing Nginx and Cloudflare
+
+For `shopee.saovayem.com`, set these values in `.env` and generate two different secrets with `openssl rand -hex 32`:
+
+```dotenv
+NODE_ENV=production
+PASSKEY_RP_NAME=Packing Video Manager
+PASSKEY_RP_ID=shopee.saovayem.com
+PASSKEY_ORIGIN=https://shopee.saovayem.com
+PASSKEY_ENROLLMENT_SECRET=<first generated value>
+AUTH_SESSION_SECRET=<second generated value>
+```
+
+Operator accounts and public passkey credentials are stored in PostgreSQL. No separate authentication directory is mounted. Run the app with the server override so only the `web` container joins the existing external `web_network`; PostgreSQL and API stay on the app's private Compose network:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build
+```
+
+The existing `nginx-proxy` is already attached to `web_network`. Add this server block inside its `http` section to route the domain to the web container:
+
+```nginx
+server {
+    listen 80;
+    server_name shopee.saovayem.com;
+
+    location / {
+        proxy_pass http://packing-record-web:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_connect_timeout 60s;
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+The web container is also bound to a loopback host port for local checks; the Nginx upstream uses the container alias and port, so changing host ports does not change this block. The API and database host mappings are loopback-only. Do not attach the API or database to `web_network`.
+
+Passkeys require the browser to load the site through HTTPS. The Nginx configuration shown above listens on port 80 only; mapping host port `443` by itself does not enable TLS. Use Cloudflare Tunnel or configure a certificate and HTTPS listener at the origin before selecting an encrypted Cloudflare-to-origin mode. Cloudflare Full (strict) requires the origin to accept HTTPS on port 443 with a valid matching certificate. [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/)
+
+To create the operator account and its first passkey, run the command inside the API container and open the one-time URL it prints in the browser. Enter the operator's name on the enrollment page. This one-time enrollment creates the only operator account; it cannot be used later to add another passkey:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.server.yml exec api pnpm --filter @packing-video-manager/api auth:enroll
+```
+
+Each enrollment authorization expires after ten minutes and can be used once. The browser saves the private key in Google Password Manager; PostgreSQL stores the public credential data. Back up `./data/postgres` and `./data/videos` to preserve accounts, passkeys, records, and recordings.
 
 ## Run services from the host
 
@@ -59,7 +123,7 @@ set +a
 pnpm dev
 ```
 
-The included `.env.example` has the supplied local values. Copy it to `.env` before using the command above, and edit the values if your host database differs. For host development, the API listens on port `3000` and Vite serves the web app on port `5173`, proxying `/api` to `http://localhost:3000`. Compose overrides the API database host to `db` and uses `POSTGRES_PASSWORD` for its own database container.
+The included `.env.example` has the supplied local values. Copy it to `.env` before using the command above, and edit the values if your host database differs. For host development, set `PASSKEY_ORIGIN=http://localhost:5173`; the API listens on port `3000` and Vite serves the web app on port `5173`, proxying `/api` to `http://localhost:3000`. Compose overrides the API database host to `db` and uses `POSTGRES_PASSWORD` for its own database container.
 
 ## Record and manage videos
 
@@ -79,4 +143,4 @@ Persistent data lives here:
 - `./data/videos` — uploaded video files.
 - `.env` — local configuration (ignored by Git; create it from `.env.example`).
 
-Back up both data directories to preserve the records and videos. Stop the stack before copying them so PostgreSQL files and database metadata are consistent. Do not delete these directories when bringing containers down. Compose publishes its PostgreSQL container on host port `5433` by default so it can run alongside a host PostgreSQL server on `5432`; use `localhost` for the host-run API and `db` only for the API running inside Compose.
+Back up both data directories to preserve accounts, passkeys, records, and videos. Stop the stack before copying them so PostgreSQL files and database metadata are consistent. Do not delete these directories when bringing containers down. Compose binds PostgreSQL to host loopback port `5433` by default so it can run alongside a host PostgreSQL server on `5432`; use `localhost` for the host-run API and `db` only for the API running inside Compose.

@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RecordsModule } from './records/records.module.js';
 import { RecordEntity } from './records/record.entity.js';
+import { AuthModule } from './auth/auth.module.js';
+import { OperatorEntity } from './auth/operator.entity.js';
+import { PasskeyCredentialEntity } from './auth/passkey-credential.entity.js';
 
 @Module({
   imports: [
@@ -12,11 +15,12 @@ import { RecordEntity } from './records/record.entity.js';
       username: process.env.DATABASE_USER ?? process.env.DATABASE_USERNAME ?? 'postgres',
       password: process.env.DATABASE_PASSWORD ?? 'mysecretpassword',
       database: process.env.DATABASE_NAME ?? 'record',
-      entities: [RecordEntity],
+      entities: [RecordEntity, OperatorEntity, PasskeyCredentialEntity],
       synchronize: true,
       retryAttempts: 20,
       retryDelay: 3000,
     }),
+    AuthModule,
     RecordsModule,
   ],
 })

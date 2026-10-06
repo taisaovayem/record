@@ -1,6 +1,6 @@
 import {
-  BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query,
-  Res, UploadedFile, UseInterceptors,
+  BadRequestException, Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, Req,
+  Res, UploadedFile, UseGuards, UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
@@ -12,10 +12,12 @@ import type { Express, Response } from 'express';
 import { BulkDeleteDto } from './dto/bulk-delete.dto.js';
 import { ListRecordsDto } from './dto/list-records.dto.js';
 import { RecordsService } from './records.service.js';
+import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard.js';
 
 const videoDirectory = () => process.env.VIDEO_STORAGE_DIR ?? join(process.cwd(), 'data', 'videos');
 
 @Controller('records')
+@UseGuards(AuthGuard)
 export class RecordsController {
   constructor(private readonly records: RecordsService) {}
 
@@ -41,6 +43,7 @@ export class RecordsController {
     // Intentionally no small fileSize limit: use disk-backed staging for long recordings.
   }))
   async upload(
+    @Req() request: AuthenticatedRequest,
     @Body('orderCode') orderCode: unknown,
     @Body('captureId') captureId: unknown,
     @Body('recordedAt') recordedAt: unknown,
@@ -65,7 +68,7 @@ export class RecordsController {
       await this.records.removeTemporaryUpload(video.path);
       throw new BadRequestException('recordedAt must be a valid ISO-8601 timestamp when supplied');
     }
-    return this.records.create(orderCode, video, captureId, recordedAt === undefined ? new Date() : new Date(recordedAt));
+    return this.records.create(request.operator.operatorId, orderCode, video, captureId, recordedAt === undefined ? new Date() : new Date(recordedAt));
   }
 
   @Get(':id/download')

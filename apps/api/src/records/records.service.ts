@@ -50,7 +50,7 @@ export class RecordsService implements OnModuleInit {
     };
   }
 
-  async create(orderCode: string, upload: Express.Multer.File, captureId?: string, recordedAt = new Date()) {
+  async create(operatorId: string, orderCode: string, upload: Express.Multer.File, captureId?: string, recordedAt = new Date()) {
     await mkdir(videoDirectory(), { recursive: true });
     const candidateMimeType = (upload.mimetype || '').split(';', 1)[0].trim().toLowerCase();
     if (!/^video\/[a-z0-9.+-]+$/.test(candidateMimeType)) {
@@ -105,6 +105,7 @@ export class RecordsService implements OnModuleInit {
       recordedAt,
       filename,
       mimeType,
+      operatorId,
     });
     try {
       return this.toSummary(await this.repository.save(record));
