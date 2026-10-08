@@ -1,11 +1,9 @@
 import {
   BadRequestException,
-  ConflictException,
   Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -17,7 +15,7 @@ import {
   type RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import { randomUUID } from 'node:crypto';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { AUTH_CONFIG, type AuthConfig } from './auth-config.js';
 import { EnrollmentAuthorizationService } from './enrollment-authorization.service.js';
 import { normalizeOperatorName } from './operator-name.js';
@@ -30,7 +28,6 @@ export class AuthService {
   private readonly loginChallenges = new Map<string, number>();
 
   constructor(
-    @InjectRepository(OperatorEntity) private readonly operators: Repository<OperatorEntity>,
     private readonly dataSource: DataSource,
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
     private readonly enrollments: EnrollmentAuthorizationService,
@@ -45,7 +42,6 @@ export class AuthService {
     if (!this.enrollments.isValid(authorization)) {
       throw new UnauthorizedException('Enrollment authorization is invalid or expired');
     }
-    if (await this.operators.count()) throw new ConflictException('The operator account has already been registered');
     const operatorId = randomUUID();
     const options = await generateRegistrationOptions({
       rpName: this.config.rpName,
@@ -84,8 +80,6 @@ export class AuthService {
     if (!await this.enrollments.consume(authorization, challenge)) throw new UnauthorizedException('Enrollment authorization has already been used');
 
     await this.dataSource.transaction(async (manager) => {
-      await manager.query('SELECT pg_advisory_xact_lock(1330532946, 1)');
-      if (await manager.count(OperatorEntity)) throw new ConflictException('The operator account has already been registered');
       const operator = manager.create(OperatorEntity, { id: pending.operatorId, name: pending.operatorName });
       await manager.save(operator);
       const passkey = manager.create(PasskeyCredentialEntity, {
