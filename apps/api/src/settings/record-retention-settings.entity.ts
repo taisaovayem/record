@@ -7,4 +7,5 @@ export class RecordRetentionSettingsEntity {
   @Column({ type: 'integer', default: 60 }) autoDeleteRecordsAfterDays = 60;
   @Column({ type: 'boolean', default: false }) purgeVideosEnabled = false;
   @Column({ type: 'integer', default: 60 }) purgeVideosAfterDays = 60;
+  @Column({ type: 'varchar', length: 8, default: '480p' }) preferredVideoQuality = '480p';
 }

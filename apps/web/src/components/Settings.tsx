@@ -11,6 +11,7 @@ const defaults: RetentionSettings = {
   autoDeleteRecordsAfterDays: 60,
   purgeVideosEnabled: false,
   purgeVideosAfterDays: 60,
+  preferredVideoQuality: '480p',
 };
 
 export default function Settings({ onSaved, onCancel }: Props) {
@@ -60,8 +61,8 @@ export default function Settings({ onSaved, onCancel }: Props) {
     <header className="settings-heading">
       <div>
         <p className="eyebrow">TÙY CHỈNH HỆ THỐNG</p>
-        <h2>Cài đặt lưu trữ</h2>
-        <p className="muted">Quản lý thời gian lưu bản ghi và video gốc.</p>
+        <h2>Cài đặt</h2>
+        <p className="muted">Quản lý video và thời gian lưu trữ.</p>
       </div>
       <button className="button button-quiet" type="button" onClick={onCancel}>← Trang chủ</button>
     </header>
@@ -69,6 +70,21 @@ export default function Settings({ onSaved, onCancel }: Props) {
     {error && <div className="notice notice-error" role="alert">{error}</div>}
 
     {loading ? <p className="settings-loading">Đang tải cài đặt…</p> : !loaded ? <button className="button button-quiet" type="button" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Thử tải lại</button> : <form onSubmit={(event) => void save(event)}>
+      <div className="retention-setting">
+        <label className="retention-title" htmlFor="preferred-video-quality">Chất lượng video ưu tiên</label>
+        <p className="muted">Camera sẽ dùng mức gần nhất có thể hỗ trợ.</p>
+        <select id="preferred-video-quality" className="quality-select" value={settings.preferredVideoQuality} onChange={(event) => update('preferredVideoQuality', event.target.value as RetentionSettings['preferredVideoQuality'])}>
+          <option value="2160p">4K</option>
+          <option value="1440p">1440p</option>
+          <option value="1080p">1080p</option>
+          <option value="720p">720p</option>
+          <option value="480p">480p</option>
+          <option value="360p">360p</option>
+          <option value="240p">240p</option>
+          <option value="144p">144p</option>
+        </select>
+      </div>
+
       <div className="retention-setting">
         <div className="retention-setting-heading">
           <div>

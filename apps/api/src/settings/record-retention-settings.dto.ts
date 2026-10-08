@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, Max, Min } from 'class-validator';
 
 export class UpdateRecordRetentionSettingsDto {
   @IsBoolean()
@@ -12,4 +12,7 @@ export class UpdateRecordRetentionSettingsDto {
 
   @IsInt() @Min(1) @Max(36_500)
   purgeVideosAfterDays!: number;
+
+  @IsIn(['2160p', '1440p', '1080p', '720p', '480p', '360p', '240p', '144p'])
+  preferredVideoQuality!: string;
 }

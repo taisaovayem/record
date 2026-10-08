@@ -165,6 +165,21 @@ button:disabled {
   padding: 20px 0;
   border-top: 1px solid var(--line);
 }
+.quality-select {
+  display: block;
+  width: min(100%, 320px);
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+.retention-setting > .muted {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
 .retention-setting-heading > div {
   display: flex;
   align-items: center;
@@ -730,7 +745,8 @@ input[type="checkbox"] {
   object-fit: contain;
 }
 .recording-badge,
-.timer {
+.timer,
+.quality-badge {
   position: absolute;
   top: 12px;
   padding: 7px 10px;
@@ -758,6 +774,11 @@ input[type="checkbox"] {
 }
 .timer {
   right: 12px;
+}
+.quality-badge {
+  top: auto;
+  right: 12px;
+  bottom: 12px;
 }
 .recorder-footer {
   display: flex;

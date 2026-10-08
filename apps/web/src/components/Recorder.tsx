@@ -1,12 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BrowserQRCodeReader } from '@zxing/browser';
 import { uploadRecord } from '../api/records';
+import { getRetentionSettings, type VideoQuality } from '../api/settings';
 
 interface Props { initialOrderCode?: string; onSaved: () => void; onCancel: () => void; autoScan?: boolean; continuous: boolean; onContinuousChange: (enabled: boolean) => void }
 type Phase = 'ready' | 'requesting' | 'recording' | 'uploading' | 'failed';
 interface CapturedVideo { blob: Blob; mime: string; captureId: string; recordedAt: string; orderCode: string }
 
 const candidates = ['video/mp4;codecs="avc1.42E01E,mp4a.40.2"', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+const qualityDimensions: Record<VideoQuality, { width: number; height: number }> = {
+  '2160p': { width: 3840, height: 2160 },
+  '1440p': { width: 2560, height: 1440 },
+  '1080p': { width: 1920, height: 1080 },
+  '720p': { width: 1280, height: 720 },
+  '480p': { width: 854, height: 480 },
+  '360p': { width: 640, height: 360 },
+  '240p': { width: 426, height: 240 },
+  '144p': { width: 256, height: 144 },
+};
+const qualityHeights = Object.keys(qualityDimensions) as VideoQuality[];
+function qualityLabel(width: number, height: number) {
+  if (!width || !height) return 'Đang xác định…';
+  const shortEdge = Math.min(width, height);
+  const nearest = qualityHeights.reduce((best, quality) =>
+    Math.abs(qualityDimensions[quality].height - shortEdge) < Math.abs(qualityDimensions[best].height - shortEdge) ? quality : best,
+  '144p');
+  return `${nearest} · ${width}×${height}`;
+}
 function mimeChoice() { return typeof MediaRecorder === 'undefined' ? '' : candidates.find((mime) => MediaRecorder.isTypeSupported(mime)) ?? ''; }
 function fileExtension(mime: string) { return mime.toLowerCase().includes('mp4') ? 'mp4' : mime.toLowerCase().includes('ogg') ? 'ogv' : 'webm'; }
 function captureUuid() {
@@ -29,6 +49,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
   const [progress, setProgress] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [mime, setMime] = useState('');
+  const [recordingQuality, setRecordingQuality] = useState('');
   const [captured, setCaptured] = useState<CapturedVideo | null>(null);
   const [scanCycle, setScanCycle] = useState(0);
   const streamRef = useRef<MediaStream | null>(null);
@@ -164,9 +185,33 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
     setPhase('requesting');
     let stream: MediaStream | null = null;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+      const settings = await getRetentionSettings();
+      if (!attemptIsActive(attempt)) return;
+      const requested = qualityDimensions[settings.preferredVideoQuality] ?? qualityDimensions['480p'];
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: requested.width },
+          height: { ideal: requested.height },
+        },
+        audio: false,
+      });
       if (!attemptIsActive(attempt)) { releaseStartStream(stream); return; }
       streamRef.current = stream;
+      const track = stream.getVideoTracks()[0];
+      let actual = track?.getSettings();
+      if (track && Math.min(actual?.width ?? 0, actual?.height ?? 0) < requested.height && typeof track.getCapabilities === 'function' && typeof track.applyConstraints === 'function') {
+        const capabilities = track.getCapabilities();
+        const maximumWidth = capabilities.width?.max;
+        const maximumHeight = capabilities.height?.max;
+        if (maximumWidth && maximumHeight && (maximumWidth > (actual.width ?? 0) || maximumHeight > (actual.height ?? 0))) {
+          try {
+            await track.applyConstraints({ width: { ideal: maximumWidth }, height: { ideal: maximumHeight } });
+            actual = track.getSettings();
+          } catch { /* Keep the usable stream when the camera rejects its reported maximum. */ }
+        }
+      }
+      setRecordingQuality(qualityLabel(actual?.width ?? 0, actual?.height ?? 0));
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
@@ -251,7 +296,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
       {scanning && <div className="scanner-box"><video id="qr-video" autoPlay muted playsInline /><span>Đưa mã QR vào khung hình</span><button className="button button-quiet" onClick={closeScanner}>Đóng</button></div>}
       {cameraError && <div className="notice notice-error">{cameraError}</div>}
     </div>
-    {phase === 'recording' && <div className="camera-preview"><video ref={videoRef} autoPlay muted playsInline /><span className="recording-badge"><i /> ĐANG QUAY</span><span className="timer">{duration}</span></div>}
+    {phase === 'recording' && <div className="camera-preview"><video ref={videoRef} autoPlay muted playsInline /><span className="recording-badge"><i /> ĐANG QUAY</span><span className="quality-badge">{recordingQuality}</span><span className="timer">{duration}</span></div>}
     {phase === 'ready' && <div className="recording-placeholder"><div className="camera-symbol">◉</div><strong>Sẵn sàng ghi hình</strong><span>Đặt hàng trong khung hình rồi bắt đầu quay.</span></div>}
     {phase === 'requesting' && <div className="upload-state"><div className="spinner"/><div><strong>Đang chờ quyền camera…</strong><span>Hãy chọn Cho phép trong thông báo của trình duyệt.</span></div></div>}
     {phase === 'uploading' && <div className="upload-state"><div className="spinner"/><div><strong>Đang lưu video{progress > 0 ? ` · ${progress}%` : '…'}</strong><span>Giữ trang này mở trong khi tải lên.</span></div></div>}

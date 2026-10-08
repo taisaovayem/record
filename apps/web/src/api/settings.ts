@@ -3,7 +3,10 @@ export interface RetentionSettings {
   autoDeleteRecordsAfterDays: number;
   purgeVideosEnabled: boolean;
   purgeVideosAfterDays: number;
+  preferredVideoQuality: VideoQuality;
 }
+
+export type VideoQuality = '2160p' | '1440p' | '1080p' | '720p' | '480p' | '360p' | '240p' | '144p';
 
 const apiBase = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '');
 
@@ -30,6 +33,7 @@ export async function saveRetentionSettings(settings: RetentionSettings): Promis
       autoDeleteRecordsAfterDays: settings.autoDeleteRecordsAfterDays,
       purgeVideosEnabled: settings.purgeVideosEnabled,
       purgeVideosAfterDays: settings.purgeVideosAfterDays,
+      preferredVideoQuality: settings.preferredVideoQuality,
     }),
   }));
 }

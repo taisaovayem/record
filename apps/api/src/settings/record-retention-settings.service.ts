@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   autoDeleteRecordsAfterDays: 60,
   purgeVideosEnabled: false,
   purgeVideosAfterDays: 60,
+  preferredVideoQuality: '480p',
 };
 
 export interface RetentionSettings {
@@ -17,6 +18,7 @@ export interface RetentionSettings {
   autoDeleteRecordsAfterDays: number;
   purgeVideosEnabled: boolean;
   purgeVideosAfterDays: number;
+  preferredVideoQuality: string;
 }
 
 @Injectable()
@@ -52,6 +54,7 @@ export class RecordRetentionSettingsService {
       autoDeleteRecordsAfterDays: entity.autoDeleteRecordsAfterDays,
       purgeVideosEnabled: entity.purgeVideosEnabled,
       purgeVideosAfterDays: entity.purgeVideosAfterDays,
+      preferredVideoQuality: entity.preferredVideoQuality,
     };
   }
 }
