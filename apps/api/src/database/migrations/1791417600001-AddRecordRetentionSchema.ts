@@ -52,15 +52,23 @@ export class AddRecordRetentionSchema1791417600001 implements MigrationInterface
   private async ensureRecordIndex(queryRunner: QueryRunner): Promise<void> {
     const table = await queryRunner.getTable(recordsTable);
     if (!table) throw new Error('Cannot migrate retention schema: packing_records is missing.');
-    const existing = table.indices.find((index) =>
-      index.columnNames.length === 2 && index.columnNames[0] === 'deletedAt' && index.columnNames[1] === 'createdAt',
-    );
-    if (existing) {
-      if (existing.isUnique) throw new Error('Cannot migrate retention schema: the deletedAt/createdAt index must not be unique.');
+    const indexName = 'idx_packing_records_deleted_created';
+    const existing = table.indices.find((index) => index.name === indexName);
+    if (existing && existing.columnNames.length === 2 &&
+        existing.columnNames[0] === 'deletedAt' && existing.columnNames[1] === 'createdAt' &&
+        !existing.isUnique) {
       return;
     }
+    if (existing) {
+      if (existing.isUnique) {
+        throw new Error(`Cannot migrate retention schema: index ${indexName} is unexpectedly unique.`);
+      }
+      // Older synchronize-based schemas may have created this named index with
+      // the columns reversed. Rebuild it so deletedAt leads the retention scan.
+      await queryRunner.dropIndex(recordsTable, existing);
+    }
     await queryRunner.createIndex(recordsTable, new TableIndex({
-      name: 'idx_packing_records_deleted_created',
+      name: indexName,
       columnNames: ['deletedAt', 'createdAt'],
     }));
   }
