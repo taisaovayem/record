@@ -4,7 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
 import { mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises';
 import { extname, join } from 'node:path';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import type { Express } from 'express';
 import { ListRecordsDto } from './dto/list-records.dto.js';
 import { RecordEntity } from './record.entity.js';
@@ -15,8 +15,6 @@ const mimeExtensions: Record<string, string> = {
   'video/mp4': '.mp4', 'video/webm': '.webm', 'video/ogg': '.ogv', 'video/quicktime': '.mov',
 };
 const allowedVideoExtensions = new Set([...Object.values(mimeExtensions), '.m4v', '.mkv', '.avi']);
-
-type DeleteOutcome = 'deleted' | 'exists' | 'unknown';
 
 @Injectable()
 export class RecordsService implements OnModuleInit {
@@ -32,8 +30,9 @@ export class RecordsService implements OnModuleInit {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const builder = this.repository.createQueryBuilder('record');
+    builder.where('record.deletedAt IS NULL');
     if (query.search?.trim()) {
-      builder.where('record.orderCode ILIKE :search', { search: `%${query.search.trim()}%` });
+      builder.andWhere('record.orderCode ILIKE :search', { search: `%${query.search.trim()}%` });
     }
     const [records, total] = await builder
       .orderBy('record.recordedAt', 'DESC')
@@ -130,7 +129,7 @@ export class RecordsService implements OnModuleInit {
   }
 
   async getDownload(id: string) {
-    const record = await this.repository.findOneBy({ id });
+    const record = await this.repository.findOne({ where: { id, deletedAt: IsNull(), videoPurgedAt: IsNull() } });
     if (!record) throw new NotFoundException('Record not found');
     const path = join(videoDirectory(), record.filename);
     try {
@@ -156,54 +155,20 @@ export class RecordsService implements OnModuleInit {
         failures.push({ id, reason: 'not_found' });
         continue;
       }
+      if (record.deletedAt) {
+        failures.push({ id, reason: 'already_deleted' });
+        continue;
+      }
 
-      const sourcePath = join(videoDirectory(), record.filename);
-      const tombstonePath = `${sourcePath}${tombstoneSuffix}`;
-      let hasTombstone = false;
       try {
-        await rename(sourcePath, tombstonePath);
-        hasTombstone = true;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-          try {
-            await stat(tombstonePath);
-            hasTombstone = true;
-          } catch (tombstoneError) {
-            if ((tombstoneError as NodeJS.ErrnoException).code !== 'ENOENT') {
-              failures.push({ id, reason: 'video_file_delete_failed' });
-              continue;
-            }
-            // Missing source is allowed: clean up its metadata record below.
-          }
+        const result = await this.repository.update({ id, deletedAt: IsNull() }, { deletedAt: new Date() });
+        if (result.affected === 1) {
+          deletedIds.push(id);
         } else {
-          failures.push({ id, reason: 'video_file_delete_failed' });
-          continue;
+          failures.push({ id, reason: 'already_deleted' });
         }
-      }
-
-      let outcome: DeleteOutcome;
-      try {
-        const result = await this.repository.delete({ id });
-        outcome = result.affected === 1 ? 'deleted' : await this.deleteOutcome(id);
       } catch {
-        outcome = await this.deleteOutcome(id);
-      }
-
-      if (outcome === 'deleted') {
-        if (hasTombstone) await this.removeFileBestEffort(tombstonePath);
-        deletedIds.push(id);
-        continue;
-      }
-      if (outcome === 'unknown') {
-        // Preserve the tombstone: it may be the only copy until a later reconciliation can
-        // prove whether metadata was committed.
-        failures.push({ id, reason: 'database_delete_outcome_unknown' });
-        continue;
-      }
-      if (hasTombstone && !await this.restoreTombstone(tombstonePath, sourcePath)) {
-        failures.push({ id, reason: 'video_file_restore_failed' });
-      } else {
-        failures.push({ id, reason: 'database_delete_failed' });
+        failures.push({ id, reason: 'database_update_failed' });
       }
     }
     return { deletedIds, failures };
@@ -211,14 +176,6 @@ export class RecordsService implements OnModuleInit {
 
   async removeTemporaryUpload(path?: string): Promise<void> {
     if (path) await this.removeFileBestEffort(path);
-  }
-
-  private async deleteOutcome(id: string): Promise<DeleteOutcome> {
-    try {
-      return await this.repository.findOneBy({ id }) ? 'exists' : 'deleted';
-    } catch {
-      return 'unknown';
-    }
   }
 
   private async restoreTombstone(tombstonePath: string, sourcePath: string): Promise<boolean> {

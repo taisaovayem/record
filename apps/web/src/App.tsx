@@ -3,6 +3,7 @@ import RecordList from './components/RecordList';
 import Recorder from './components/Recorder';
 import SignIn from './components/SignIn';
 import PasskeyEnrollment from './components/PasskeyEnrollment';
+import Settings from './components/Settings';
 import { getSession, logout } from './api/auth';
 import { useShortcuts } from './hooks/useShortcuts';
 
@@ -14,7 +15,7 @@ export default function App() {
   const [sessionRefresh, setSessionRefresh] = useState(0);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState('');
-  const [screen, setScreen] = useState<'list' | 'recorder'>('list');
+  const [screen, setScreen] = useState<'list' | 'recorder' | 'settings'>('list');
   const [refreshKey, setRefreshKey] = useState(0);
   const [prefill, setPrefill] = useState('');
   const [scanAfterOpen, setScanAfterOpen] = useState(false);
@@ -89,9 +90,9 @@ export default function App() {
 
   return <div className="app-shell">
     <main>
-      {screen === 'list' ? <RecordList onNew={newRecord} onScan={scanFromList} refreshKey={refreshKey}/> : <Recorder initialOrderCode={prefill} onSaved={saved} onCancel={exitRecorder} autoScan={scanAfterOpen} continuous={continuous} onContinuousChange={changeContinuous} />}
+      {screen === 'list' ? <RecordList onNew={newRecord} onScan={scanFromList} refreshKey={refreshKey}/> : screen === 'recorder' ? <Recorder initialOrderCode={prefill} onSaved={saved} onCancel={exitRecorder} autoScan={scanAfterOpen} continuous={continuous} onContinuousChange={changeContinuous} /> : <Settings onSaved={() => setScreen('list')} onCancel={() => setScreen('list')} />}
     </main>
-    <footer className="auth-toolbar"><span>{operatorName}</span><button className="button button-quiet" onClick={() => void signOut()} disabled={loggingOut}>{loggingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button></footer>
+    <footer className="auth-toolbar"><span>{operatorName}</span>{screen !== 'settings' && <button className="button button-quiet" onClick={() => setScreen('settings')}>⚙ Cài đặt</button>}<button className="button button-quiet" onClick={() => void signOut()} disabled={loggingOut}>{loggingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button></footer>
     {logoutError && <div className="notice notice-error" role="alert">{logoutError}<button className="icon-button" onClick={() => setLogoutError('')}>×</button></div>}
   </div>;
 }

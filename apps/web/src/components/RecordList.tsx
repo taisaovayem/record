@@ -47,11 +47,11 @@ export default function RecordList({ onNew, refreshKey, onScan }: Props) {
   });
   const remove = async () => {
     const ids = [...selection];
-    if (!ids.length || !window.confirm(`Xóa ${ids.length} video đã chọn? Thao tác này không thể hoàn tác.`)) return;
+    if (!ids.length || !window.confirm(`Ẩn ${ids.length} bản ghi đã chọn khỏi danh sách? Video vẫn được lưu theo cấu hình lưu trữ.`)) return;
     setDeleting(true); setError('');
     try {
       const outcome = await deleteRecords(ids);
-      if (outcome.failures.length) setError(`Đã xóa ${outcome.deletedIds.length}; ${outcome.failures.length} mục chưa xóa được. Làm mới danh sách để thử lại.`);
+      if (outcome.failures.length) setError(`Đã ẩn ${outcome.deletedIds.length}; ${outcome.failures.length} mục chưa xử lý được. Làm mới danh sách để thử lại.`);
       const nextPage = page > 1 && result.items.length === outcome.deletedIds.length ? page - 1 : page;
       setPage(nextPage);
       const refreshed = await listRecords(nextPage, 20, search);

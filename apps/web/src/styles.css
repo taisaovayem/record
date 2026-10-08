@@ -129,6 +129,137 @@ button:disabled {
   font-weight: 600;
   color: var(--ink);
 }
+.settings-panel {
+  max-width: 760px;
+  margin: 16px auto 0;
+  padding: 28px 30px 24px;
+  background: var(--paper);
+  border: 1px solid #eae9e3;
+  border-radius: 13px;
+  box-shadow: 0 6px 24px rgba(43, 48, 39, 0.035);
+}
+.settings-heading,
+.retention-setting-heading,
+.settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.settings-heading {
+  margin-bottom: 24px;
+}
+.settings-heading h2 {
+  margin: 0;
+  font: 700 25px Manrope, sans-serif;
+  letter-spacing: -0.85px;
+}
+.settings-heading .muted {
+  margin-top: 6px;
+}
+.settings-loading {
+  color: var(--muted);
+  font-size: 13px;
+}
+.retention-setting {
+  padding: 20px 0;
+  border-top: 1px solid var(--line);
+}
+.retention-setting-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.retention-title {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+.retention-tooltip {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid #cfd4cb;
+  border-radius: 50%;
+  color: #70766d;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: help;
+}
+.retention-tooltip:focus-visible {
+  outline: 3px solid #edf3ed;
+  outline-offset: 2px;
+}
+.retention-switch {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  cursor: pointer;
+}
+.retention-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.retention-switch-track {
+  width: 38px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 12px;
+  background: #c9ccc5;
+  transition: background 0.15s;
+}
+.retention-switch-track::after {
+  content: "";
+  width: 16px;
+  height: 16px;
+  margin-left: 3px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 3px #0002;
+  transition: transform 0.15s;
+}
+.retention-switch input:checked + .retention-switch-track {
+  background: var(--green);
+}
+.retention-switch input:checked + .retention-switch-track::after {
+  transform: translateX(16px);
+}
+.retention-switch input:focus-visible + .retention-switch-track {
+  outline: 3px solid #edf3ed;
+  outline-offset: 2px;
+}
+.retention-days {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 17px;
+  color: #656b62;
+  font-size: 12px;
+}
+.retention-days input {
+  width: 88px;
+  height: 36px;
+  padding: 0 9px;
+  border: 1px solid #deddd5;
+  border-radius: 7px;
+  background: white;
+  color: var(--ink);
+}
+.retention-days input:disabled {
+  background: #f5f5f2;
+  color: #93968f;
+}
+.settings-actions {
+  justify-content: flex-end;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
 
 .list-panel,
 .recorder-panel {
@@ -764,8 +895,19 @@ input[type="checkbox"] {
     margin: 27px 0 15px;
   }
   .list-panel,
-  .recorder-panel {
+  .recorder-panel,
+  .settings-panel {
     padding: 20px 16px 16px;
+  }
+  .settings-heading {
+    align-items: flex-start;
+  }
+  .settings-heading h2 {
+    font-size: 21px;
+  }
+  .settings-heading > .button {
+    padding: 9px;
+    white-space: nowrap;
   }
   .list-heading h2 {
     font-size: 21px;

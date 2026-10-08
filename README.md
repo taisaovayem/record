@@ -56,6 +56,22 @@ Open <http://localhost:8080>. Compose starts the web app, NestJS API, and its ow
 
 The Compose database is named `record` and uses user `postgres`. Set `POSTGRES_PASSWORD` in `.env` to change its password. The API connects to PostgreSQL using the Compose service hostname `db` (container `localhost` would refer to the API container itself). The web server proxies `/api` requests to `api:3000` on the private Compose network. The example `.env` runs local Compose in development mode; production requires explicit passkey settings and non-empty secrets.
 
+### Database schema migrations
+
+The API runs pending TypeORM migrations automatically before serving requests. A new, empty PostgreSQL database gets the record, operator/passkey, and retention schema from the migration files; TypeORM records completed versions in `typeorm_migrations`. Schema synchronization is disabled.
+
+To inspect or run migrations manually from a host checkout, build the API first, then use the same migration set as startup:
+
+```sh
+pnpm --filter @packing-video-manager/api build
+pnpm --filter @packing-video-manager/api migration:show
+pnpm --filter @packing-video-manager/api migration:run
+```
+
+Known databases created by earlier application versions are adopted without replacing their tables or rows. The baseline migration adds nullable `captureId`/`operatorId` columns when missing and creates absent operator/passkey tables; a database already matching the baseline is recorded in migration history without rewriting its data. The retention migration preserves saved settings and any existing `createdAt` values. If it must add `createdAt`, existing records use the migration time as their age baseline. An incompatible schema stops migration with an error; migrations do not drop existing tables or data. Migration rollback is intentionally unsupported to avoid deleting stored records or settings.
+
+Credentials from the former file-backed passkey store are not imported. Keep existing PostgreSQL and video data directories; do not remove them during an upgrade.
+
 ## Deploy behind the existing Nginx and Cloudflare
 
 For `shopee.saovayem.com`, set these values in `.env` and generate two different secrets with `openssl rand -hex 32`:
@@ -98,13 +114,13 @@ The web container is also bound to a loopback host port for local checks; the Ng
 
 Passkeys require the browser to load the site through HTTPS. The Nginx configuration shown above listens on port 80 only; mapping host port `443` by itself does not enable TLS. Use Cloudflare Tunnel or configure a certificate and HTTPS listener at the origin before selecting an encrypted Cloudflare-to-origin mode. Cloudflare Full (strict) requires the origin to accept HTTPS on port 443 with a valid matching certificate. [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/)
 
-To create the operator account and its first passkey, run the command inside the API container and open the one-time URL it prints in the browser. Enter the operator's name on the enrollment page. This one-time enrollment creates the only operator account; it cannot be used later to add another passkey:
+To create an operator account and register its passkey, run the command inside the API container and open the one-time URL it prints in the browser. Enter the operator's name on the enrollment page. Run the command again whenever you need to add another operator; each enrollment authorization expires after ten minutes and can be used once:
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.server.yml exec api pnpm --filter @packing-video-manager/api auth:enroll
 ```
 
-Each enrollment authorization expires after ten minutes and can be used once. The browser saves the private key in Google Password Manager; PostgreSQL stores the public credential data. Back up `./data/postgres` and `./data/videos` to preserve accounts, passkeys, records, and recordings.
+The browser saves the private key in Google Password Manager; PostgreSQL stores the public credential data. Back up `./data/postgres` and `./data/videos` to preserve accounts, passkeys, records, and recordings.
 
 ## Run services from the host
 
@@ -131,7 +147,16 @@ From the list, choose **Tạo bản quay** or press **N**. Enter an order code, 
 
 Press **R** to start recording and **S** to stop. Stopping uploads and saves that recording automatically. The browser uses MP4 when supported; otherwise it records in a supported browser format. After the server confirms the save, the app returns to the list and refreshes it for the next packing session. If upload fails, keep the page open and choose **Thử tải lại** to upload the same captured video; it remains in browser memory until a successful save. Action shortcuts are ignored while typing in text fields.
 
-The list is always newest-first and paginated (20 records per page). Search by order code, download a saved video, or select multiple records on the current page and choose delete. Deletion asks for confirmation and removes the associated video files as well as their database records. There is no sort control or archived-video preview.
+The list is always newest-first and paginated (20 records per page). Search by order code, download a saved video, or select multiple records on the current page and choose delete. Deletion asks for confirmation and soft-deletes the selected records: they are hidden from the normal list, while the database rows and video files remain. There is no sort control, restore screen, or archived-video preview.
+
+## Retention settings
+
+Open **Cài đặt** beside **Đăng xuất** to configure the two global retention rules. Both rules are disabled by default, and each day count starts at 60:
+
+- **Tự động xóa bản ghi** soft-deletes a record after the selected number of full days since the server created it. The database row and video remain.
+- **Xóa vĩnh viễn video gốc** removes the video file after the selected number of full days since its record was soft-deleted. The database row and its soft-delete timestamp remain; only the video file is removed.
+
+The API checks enabled rules every day at 00:00 Vietnam time. It compares full timestamps, so an item is only eligible after the exact configured duration has elapsed. If the API is unavailable at midnight, overdue items are handled at the next scheduled run. Failed video removals are retried at a later run. The two settings are independent, and a disabled rule does not run.
 
 ## Camera access and data backup
 
