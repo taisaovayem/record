@@ -18,13 +18,11 @@ export default function App() {
   const [screen, setScreen] = useState<'list' | 'recorder' | 'settings'>('list');
   const [refreshKey, setRefreshKey] = useState(0);
   const [prefill, setPrefill] = useState('');
-  const [scanAfterOpen, setScanAfterOpen] = useState(false);
   const [continuous, setContinuous] = useState(() => {
     try { return window.localStorage.getItem('packing-continuous-mode') !== 'false'; }
     catch { return true; }
   });
-  const newRecord = useCallback(() => { setPrefill(''); setScanAfterOpen(false); setScreen('recorder'); }, []);
-  const scanFromList = useCallback(() => { setPrefill(''); setScanAfterOpen(true); setScreen('recorder'); }, []);
+  const newRecord = useCallback(() => { setPrefill(''); setScreen('recorder'); }, []);
   const saved = useCallback(() => { setRefreshKey((value) => value + 1); }, []);
   const exitRecorder = useCallback(() => setScreen('list'), []);
   const changeContinuous = useCallback((enabled: boolean) => {
@@ -77,7 +75,8 @@ export default function App() {
   };
   useShortcuts({
     n: () => { if (screen === 'list') newRecord(); },
-    q: () => screen === 'list' ? scanFromList() : document.querySelector<HTMLButtonElement>('.order-entry .button-quiet')?.click(),
+    q: () => screen === 'list' ? document.querySelector<HTMLButtonElement>('.search-qr-button')?.click() : document.querySelector<HTMLButtonElement>('.order-entry .button-quiet')?.click(),
+    f: () => { if (screen === 'list') document.querySelector<HTMLInputElement>('.search-box input')?.focus(); },
     r: () => document.querySelector<HTMLButtonElement>('.button-record')?.click(),
     s: () => document.querySelector<HTMLButtonElement>('.button-stop')?.click(),
     i: () => { if (screen === 'recorder') document.querySelector<HTMLInputElement>('.continuous-toggle')?.click(); },
@@ -90,7 +89,7 @@ export default function App() {
 
   return <div className="app-shell">
     <main>
-      {screen === 'list' ? <RecordList onNew={newRecord} onScan={scanFromList} refreshKey={refreshKey}/> : screen === 'recorder' ? <Recorder initialOrderCode={prefill} onSaved={saved} onCancel={exitRecorder} autoScan={scanAfterOpen} continuous={continuous} onContinuousChange={changeContinuous} /> : <Settings onSaved={() => setScreen('list')} onCancel={() => setScreen('list')} />}
+      {screen === 'list' ? <RecordList onNew={newRecord} refreshKey={refreshKey}/> : screen === 'recorder' ? <Recorder initialOrderCode={prefill} onSaved={saved} onCancel={exitRecorder} continuous={continuous} onContinuousChange={changeContinuous} /> : <Settings onSaved={() => setScreen('list')} onCancel={() => setScreen('list')} />}
     </main>
     <footer className="auth-toolbar"><span>{operatorName}</span>{screen !== 'settings' && <button className="button button-quiet" onClick={() => setScreen('settings')}>⚙ Cài đặt</button>}<button className="button button-quiet" onClick={() => void signOut()} disabled={loggingOut}>{loggingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button></footer>
     {logoutError && <div className="notice notice-error" role="alert">{logoutError}<button className="icon-button" onClick={() => setLogoutError('')}>×</button></div>}

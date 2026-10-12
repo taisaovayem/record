@@ -1,17 +1,17 @@
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { deleteRecords, downloadUrl, listRecords, type PackingRecord, type RecordPage } from '../api/records';
 import { getSession } from '../api/auth';
+import ListQrScanner from './ListQrScanner';
 
 interface Props {
   onNew: () => void;
   refreshKey: number;
-  onScan: () => void;
 }
 
 const emptyPage: RecordPage = { items: [], total: 0, page: 1, limit: 20, totalPages: 0 };
 const formatDate = (value: string) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 
-export default function RecordList({ onNew, refreshKey, onScan }: Props) {
+export default function RecordList({ onNew, refreshKey }: Props) {
   const [result, setResult] = useState(emptyPage);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -19,6 +19,15 @@ export default function RecordList({ onNew, refreshKey, onScan }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const handleScannedCode = useCallback((code: string) => {
+    setSearch(code);
+    setPage(1);
+    setScanning(false);
+    searchInputRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -78,8 +87,10 @@ export default function RecordList({ onNew, refreshKey, onScan }: Props) {
     <div className="list-heading">
       <div>
         <div className="toolbar">
-          <label className="search-box"><span aria-hidden="true">⌕</span><input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Tìm theo mã đơn" aria-label="Tìm theo mã đơn" />{search && <button aria-label="Xóa tìm kiếm" className="icon-button" onClick={() => setSearch('')}>×</button>}</label>
-          <button className="button button-quiet" onClick={onScan}><span aria-hidden="true">▦</span> Quét QR <kbd>Q</kbd></button>
+          <div className="search-box-wrap">
+            <div className="search-box"><span aria-hidden="true">⌕</span><input ref={searchInputRef} value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Tìm theo mã đơn" aria-label="Tìm theo mã đơn" />{search && <button aria-label="Xóa tìm kiếm" className="icon-button" onClick={() => setSearch('')}>×</button>}<button className="search-qr-button" aria-label={scanning ? 'Đóng quét QR' : 'Quét QR'} title="Quét QR (Q)" onClick={() => setScanning((value) => !value)}><span aria-hidden="true">▦</span></button></div>
+            {scanning && <ListQrScanner onDecoded={handleScannedCode} onClose={() => setScanning(false)} />}
+          </div>
           {selection.size > 0 && <button className="button button-danger" onClick={remove} disabled={deleting}>{deleting ? 'Đang xóa…' : `Xóa ${selection.size} mục`}</button>}
         </div>
       </div>
