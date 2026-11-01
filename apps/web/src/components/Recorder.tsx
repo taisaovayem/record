@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { BrowserQRCodeReader } from '@zxing/browser';
 import { uploadRecord } from '../api/records';
 import { getRetentionSettings, type VideoQuality } from '../api/settings';
+import { pendingStorageErrorMessage, removePendingUpload, savePendingUpload } from '../pendingUploads';
 
 interface Props { initialOrderCode?: string; onSaved: () => void; onCancel: () => void; autoScan?: boolean; continuous: boolean; onContinuousChange: (enabled: boolean) => void }
 type Phase = 'ready' | 'requesting' | 'recording' | 'uploading' | 'failed';
@@ -235,7 +236,17 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
         if (!mountedRef.current) return;
         if (!capture.size) { setPhase('ready'); setCameraError('Không thu được dữ liệu video. Vui lòng kiểm tra camera và thử lại.'); return; }
         const savedCapture = { blob: capture, mime: type, captureId: captureUuid(), recordedAt: stopTime, orderCode: orderCodeOverride.trim() };
-        setCaptured(savedCapture); setMime(type); setPhase('uploading'); void send(savedCapture);
+        const extension = fileExtension(type);
+        const filename = `packing-${stopTime}.${extension}`;
+        void (async () => {
+          try {
+            await savePendingUpload({ ...savedCapture, filename });
+          } catch (reason) {
+            if (mountedRef.current) setError(pendingStorageErrorMessage(reason));
+          }
+          if (!mountedRef.current) return;
+          setCaptured(savedCapture); setMime(type); setPhase('uploading'); void send(savedCapture);
+        })();
       };
       recorder.start(1000);
       if (!attemptIsActive(attempt)) { recorder.stop(); return; }
@@ -261,6 +272,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
       const extension = fileExtension(capture.mime);
       await uploadRecord(capture.orderCode, capture.blob, `packing-${capture.recordedAt}.${extension}`, capture.captureId, capture.recordedAt, setProgress);
       if (!mountedRef.current) return;
+      try { await removePendingUpload(capture.captureId); } catch { /* upload succeeded; local cleanup can wait */ }
       setCaptured(null);
       onSaved();
       if (continuousRef.current) {
@@ -300,7 +312,7 @@ export default function Recorder({ initialOrderCode = '', onSaved, onCancel, aut
     {phase === 'ready' && <div className="recording-placeholder"><div className="camera-symbol">◉</div><strong>Sẵn sàng ghi hình</strong><span>Đặt hàng trong khung hình rồi bắt đầu quay.</span></div>}
     {phase === 'requesting' && <div className="upload-state"><div className="spinner"/><div><strong>Đang chờ quyền camera…</strong><span>Hãy chọn Cho phép trong thông báo của trình duyệt.</span></div></div>}
     {phase === 'uploading' && <div className="upload-state"><div className="spinner"/><div><strong>Đang lưu video{progress > 0 ? ` · ${progress}%` : '…'}</strong><span>Giữ trang này mở trong khi tải lên.</span></div></div>}
-    {phase === 'failed' && <div className="retry-card"><div><strong>Video chưa được lưu</strong><span>Bản quay còn trong bộ nhớ trình duyệt. Thử lại để lưu đúng video này.</span></div><button className="button button-primary" onClick={() => captured && void send(captured)}>Thử tải lại</button></div>}
+    {phase === 'failed' && <div className="retry-card"><div><strong>Video chưa được lưu lên máy chủ</strong><span>Bản quay đã được lưu tạm trên thiết bị. Bạn có thể thử lại ở đây hoặc tải lại trang và gửi từ danh sách.</span></div><button className="button button-primary" onClick={() => captured && void send(captured)}>Thử tải lại</button></div>}
     {error && <div className="notice notice-error" role="alert">{error}</div>}
     <div className="recorder-footer"><div className="format-note"><span className="secure-dot"/> Định dạng: {mime || mimeChoice() || 'Tự động chọn'}</div><div className="record-actions">{phase === 'recording' ? <><span className="live-duration"><i /> {duration}</span><button className="button button-stop" onClick={stop}>■ Dừng & lưu <kbd>S</kbd></button></> : phase === 'ready' ? <button className="button button-record" onClick={() => void start()}>● Bắt đầu quay <kbd>R</kbd></button> : null}</div></div>
     <span className="shortcut-hints">Tạo mới <kbd>N</kbd> <span>·</span> Quét QR <kbd>Q</kbd> <span>·</span> Quay <kbd>R</kbd> <span>·</span> Dừng <kbd>S</kbd> <span>·</span> Liên tục <kbd>I</kbd> <span>·</span> Danh sách <kbd>W</kbd></span>

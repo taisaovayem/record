@@ -2,16 +2,18 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react
 import { deleteRecords, downloadUrl, listRecords, type PackingRecord, type RecordPage } from '../api/records';
 import { getSession } from '../api/auth';
 import ListQrScanner from './ListQrScanner';
+import PendingUploadsBanner from './PendingUploadsBanner';
 
 interface Props {
   onNew: () => void;
   refreshKey: number;
+  onPendingUploaded: () => void;
 }
 
 const emptyPage: RecordPage = { items: [], total: 0, page: 1, limit: 20, totalPages: 0 };
 const formatDate = (value: string) => new Intl.DateTimeFormat('vi-VN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 
-export default function RecordList({ onNew, refreshKey }: Props) {
+export default function RecordList({ onNew, refreshKey, onPendingUploaded }: Props) {
   const [result, setResult] = useState(emptyPage);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -96,7 +98,7 @@ export default function RecordList({ onNew, refreshKey }: Props) {
       </div>
       <button className="button button-primary" onClick={onNew}>＋ <span>Tạo bản quay</span> <kbd>N</kbd></button>
     </div>
-    
+    <PendingUploadsBanner refreshKey={refreshKey} onUploaded={onPendingUploaded} />
     {error && <div className="notice notice-error" role="alert">{error}<button className="icon-button" onClick={() => setError('')}>×</button></div>}
     <div className="table-wrap">
       <table><thead><tr><th className="check-cell"><input type="checkbox" aria-label="Chọn tất cả trên trang" checked={allSelected} onChange={togglePage} disabled /></th><th>MÃ ĐƠN</th><th>THỜI GIAN QUAY</th><th className="action-heading">VIDEO</th></tr></thead>

@@ -89,7 +89,7 @@ export default function App() {
 
   return <div className="app-shell">
     <main>
-      {screen === 'list' ? <RecordList onNew={newRecord} refreshKey={refreshKey}/> : screen === 'recorder' ? <Recorder initialOrderCode={prefill} onSaved={saved} onCancel={exitRecorder} continuous={continuous} onContinuousChange={changeContinuous} /> : <Settings onSaved={() => setScreen('list')} onCancel={() => setScreen('list')} />}
+      {screen === 'list' ? <RecordList onNew={newRecord} refreshKey={refreshKey} onPendingUploaded={saved} /> : screen === 'recorder' ? <Recorder initialOrderCode={prefill} onSaved={saved} onCancel={exitRecorder} continuous={continuous} onContinuousChange={changeContinuous} /> : <Settings onSaved={() => setScreen('list')} onCancel={() => setScreen('list')} />}
     </main>
     <footer className="auth-toolbar"><span>{operatorName}</span>{screen !== 'settings' && <button className="button button-quiet" onClick={() => setScreen('settings')}>⚙ Cài đặt</button>}<button className="button button-quiet" onClick={() => void signOut()} disabled={loggingOut}>{loggingOut ? 'Đang đăng xuất…' : 'Đăng xuất'}</button></footer>
     {logoutError && <div className="notice notice-error" role="alert">{logoutError}<button className="icon-button" onClick={() => setLogoutError('')}>×</button></div>}
